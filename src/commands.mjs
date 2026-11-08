@@ -12,7 +12,11 @@ import { rankRows, refreshFromAA } from './rank.mjs';
 import { route, taskProfile, TASK_PROFILES } from './route.mjs';
 import { selectBackend, HerdrBackend, HcBackend, projectId, checkAgentName } from './backends.mjs';
 import { usageFor, estimateCost, findCodexSession } from './usage.mjs';
-import { table, HarmaError, now, which } from './util.mjs';
+import { table, HarmaError, now, which, readJson, run } from './util.mjs';
+import { modelOptions, selectionRows, applySelection, parseSetSpec, describe, ORCHESTRATOR, samePick } from './roster.mjs';
+import { initState, runTui } from './tui.mjs';
+import { statePath } from './state.mjs';
+import { fileURLToPath } from 'node:url';
 
 export const EXIT_NEEDS_CONFIRM = 3;
 export const EXIT_BLOCKED = 4; // agent started, waiting on a dialog; task not delivered
@@ -148,8 +152,10 @@ export async function cmdRoute(flags, opts = {}) {
   const author = flags.author ? authorOf(flags.author, c.catalog) : null;
   const res = route(type, { rankRows: rankRows(c.catalog, inv.models), credits: credits.rows, config: cfg, author, top: Number(flags.top ?? 5) });
   if (!res) throw new HarmaError(`Tipo di lavoro sconosciuto: ${type}`, { hint: `Tipi: ${Object.keys(TASK_PROFILES).join(', ')}` });
+  res.user_choice = cfg.roster?.[res.profile.type] ?? null;
   emit(c, flags, res, () => [
     `Routing — ${res.profile.label}`,
+    res.user_choice ? `Scelta dell'utente (harma select): ${describe(res.user_choice)} — dispatch --task-type ${res.profile.type} userà questa.` : 'Nessuna scelta dell\'utente per questo lavoro: proponila con harma select.',
     table(res.candidates.map((r, i) => ({ '#': i + 1, modello: `${r.harness}:${r.model}`, effort: r.effort, punteggio: r.score, motivi: r.why }))),
     res.candidates.length ? `\nPer avviarlo: harma dispatch --name <nome> --task-type ${res.profile.type} --model ${res.candidates[0].harness}:${res.candidates[0].model} --effort ${res.candidates[0].effort} --prompt "<compito>"` : '\nNessun candidato: abbassa min_index in .harma/config.json routing o controlla crediti e CLI.',
   ].join('\n'));
@@ -173,6 +179,11 @@ export async function cmdDispatch(flags, opts = {}) {
   if (flags.model) {
     const t = parseTarget(flags.model, c.catalog);
     pick = { harness: t.harness, model: t.model, effort: flags.effort ?? c.catalog.models?.[t.model]?.effort_default ?? null, why: 'scelto esplicitamente' };
+  } else if (flags['task-type'] && cfg.roster?.[taskProfile(flags['task-type'], cfg)?.type]) {
+    const type = taskProfile(flags['task-type'], cfg).type;
+    const chosen = cfg.roster[type];
+    if (chosen.none) throw new HarmaError(`Per ${type} l'utente ha scelto di non usare nessun modello`, { hint: 'Cambia la scelta con harma select, o passa --model esplicitamente' });
+    pick = { harness: chosen.harness, model: chosen.model, effort: flags.effort ?? chosen.effort, why: `scelta dell'utente per ${type} (harma select, ${chosen.source})` };
   } else {
     if (!flags['task-type']) throw new HarmaError('Serve --model <harness>:<model> oppure --task-type <tipo>');
     const inv = await currentInventory(c, cfg);
@@ -518,5 +529,125 @@ export async function cmdResume(flags, opts = {}) {
   c.out(flags.json ? JSON.stringify({ resumed: true, argv }) : `Ripreso ${name} (sessione ${a.session_id}) su ${backend.name}.`);
   return { resumed: true, argv };
 }
+
+// select ─ the user validates or picks model + effort per job ─────────────
+const BIN = fileURLToPath(new URL('../bin/harma.mjs', import.meta.url));
+
+export async function cmdSelect(flags, opts = {}) {
+  const c = ctx(opts);
+  const cfg = loadConfig(c.root, { required: true });
+  if (flags.open) return openSelect(c, cfg, flags, opts);
+
+  if (!flags.json && !flags.show) c.out('Carico modelli, crediti e proposte…');
+  const inv = await currentInventory(c, cfg);
+  const credits = await currentCredits(c, cfg, inv, opts);
+  const rr = rankRows(c.catalog, inv.models);
+  const rows = selectionRows({ cfg, rankRowsArr: rr, credits: credits.rows });
+  const models = modelOptions(inv.models, rr, credits.rows);
+
+  if (flags.show) return showSelection(c, flags, rows);
+
+  let outcome;
+  let finalRows = rows;
+  if (flags.accept || flags.set) {
+    if (flags.accept) {
+      finalRows = finalRows.map((r) => (r.proposal ? { ...r, choice: { ...r.proposal, source: 'proposta' } } : r));
+    }
+    if (flags.set) {
+      const parsed = parseSetSpec(flags.set, { catalog: c.catalog, parseTarget, effortValues });
+      finalRows = finalRows.map((r) => (parsed[r.type] ? { ...r, choice: parsed[r.type] } : r));
+    }
+    outcome = 'save';
+  } else {
+    const input = opts.input ?? process.stdin;
+    const output = opts.output ?? process.stdout;
+    if (!input.isTTY || !output.isTTY) {
+      throw new HarmaError('harma select è interattivo e qui non c\'è un terminale', {
+        hint: 'Apri la TUI in un tab herdr con: harma select --open --wait · oppure senza TUI: harma select --accept | --set "sviluppo=codex:gpt-6.1-sol@high,…" | --show',
+      });
+    }
+    const orch = cfg.orchestrator ? describe(cfg.orchestrator) : 'non impostato';
+    const end = await (opts.runTui ?? runTui)(initState({ rows, models, title: 'harma · modelli del progetto', subtitle: `orchestratore ${orch} · ${c.root}` }), { input, output });
+    outcome = end.done;
+    finalRows = end.rows;
+  }
+
+  if (outcome !== 'save') {
+    writeCache(c.root, 'select-status', { state: 'cancelled', at: now() });
+    c.out(flags.json ? JSON.stringify({ saved: false }) : 'Nessuna modifica salvata.');
+    await closeOwnTab(flags, c.env);
+    return { saved: false };
+  }
+  const roster = applySelection(cfg, finalRows);
+  saveConfig(c.root, cfg);
+  appendEvent(c.root, { type: 'roster', orchestrator: cfg.orchestrator, roster });
+  writeCache(c.root, 'select-status', { state: 'saved', at: cfg.roster_updated_at });
+  showSelection(c, flags, finalRows, 'Scelte salvate in .harma/config.json');
+  await closeOwnTab(flags, c.env);
+  return { saved: true, orchestrator: cfg.orchestrator, roster };
+}
+
+function showSelection(c, flags, rows, heading = 'Modelli per lavoro') {
+  const data = rows.map((r) => ({
+    lavoro: r.type,
+    proposta: describe(r.proposal),
+    scelta: describe(r.choice),
+    fonte: !r.choice ? '—' : r.type === ORCHESTRATOR ? 'configurato' : (r.choice.none ? 'utente' : samePick(r.choice, r.proposal) ? 'proposta accettata' : 'utente'),
+  }));
+  emit(c, flags, { rows: data }, () => `${heading}\n${table(data)}`);
+  return { rows: data };
+}
+
+/** Inside a herdr tab opened by --open: close it when the TUI ends. */
+async function closeOwnTab(flags, env) {
+  if (flags['close-tab'] && env.HERDR_TAB_ID) await run('herdr', ['tab', 'close', env.HERDR_TAB_ID], { env });
+}
+
+/** Open the TUI where the user can see it (a focused herdr tab, or an hc terminal); optionally wait. */
+async function openSelect(c, cfg, flags, opts) {
+  const startedAt = now();
+  const cmd = [process.execPath, BIN, 'select', '--close-tab'].map(shq).join(' ');
+  const backend = opts.backend ?? await selectBackend({ choice: flags.backend, config: cfg, env: c.env });
+  let where;
+  if (backend.name === 'herdr') {
+    const tab = await backend.openTab({ root: c.root, project: projectId(c.root), label: 'harma-select', command: cmd });
+    if (tab.workspaceCreated) {
+      // Re-read: the TUI may already have saved choices into config.json.
+      const fresh = loadConfig(c.root);
+      fresh.herdr = { ...(fresh.herdr ?? {}), workspace_id: tab.workspace };
+      saveConfig(c.root, fresh);
+    }
+    where = `tab herdr ${tab.tab} (in primo piano)`;
+  } else {
+    await backend.exec(['run', '--bg', '--json', '--name', 'harma-select', '--cwd', c.root, '--no-parent', '--', process.execPath, BIN, 'select']);
+    where = 'terminale hc "harma-select": aprilo con  hc attach harma-select';
+  }
+  if (!flags.wait) {
+    emit(c, flags, { opened: true, where }, () => `Selezione aperta nel ${where}. Quando l'utente salva: harma select --show`);
+    return { opened: true };
+  }
+  if (!flags.json) c.out(`Selezione aperta nel ${where}. Attendo che l'utente salvi o esca…`);
+  const timeoutMs = Number(flags.timeout ?? 900) * 1000;
+  const deadline = Date.now() + timeoutMs;
+  const poll = opts.pollMs ?? 1500;
+  while (Date.now() < deadline) {
+    const st = readJson(statePath(c.root, 'cache', 'select-status.json'));
+    if (st && st.at > startedAt) {
+      if (st.state !== 'saved') {
+        emit(c, flags, { saved: false }, () => 'L\'utente è uscito senza salvare.');
+        return { saved: false };
+      }
+      const fresh = loadConfig(c.root);
+      const data = { saved: true, orchestrator: fresh.orchestrator, roster: fresh.roster };
+      emit(c, flags, data, () => ['Scelte dell\'utente:', `orchestratore: ${describe(fresh.orchestrator)}`,
+        ...Object.entries(fresh.roster ?? {}).map(([t, v]) => `${t}: ${describe(v)} (${v.source})`)].join('\n'));
+      return data;
+    }
+    await new Promise((r) => setTimeout(r, poll));
+  }
+  throw new HarmaError(`Nessuna risposta dalla selezione entro ${timeoutMs / 1000}s`, { hint: 'Il tab resta aperto: riprova con harma select --show più tardi' });
+}
+
+const shq = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
 
 export { DEFAULT_CONFIG, taskProfile };

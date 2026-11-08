@@ -64,11 +64,35 @@ recommendation. Typical split: planning and hard debugging on the strongest mode
 on a strong model at reasonable cost; review on a different vendor from the author; extraction
 and summaries on the cheapest model above the floor.
 
+### 3b. Let the user validate the models
+Before the first dispatch, the user decides which model and effort each job gets. They can accept
+your proposals or pick their own. Use one of these:
+
+- **TUI in herdr (preferred when herdr runs):**
+  ```
+  harma select --open --wait --json
+  ```
+  This opens a focused herdr tab with the selection screen and returns the saved choices. Tell
+  the user a tab opened and what the keys are (↑↓, enter, `a` accept, `A` accept all, `s` save).
+- **In this chat:** ask with your structured-question tool (in Claude Code, `AskUserQuestion`).
+  Show the proposal per job and offer "accept" or alternatives from `harma rank`, then record
+  exactly what they chose:
+  ```
+  harma select --set "pianificazione=claude:claude-opus-5-5@xhigh,sviluppo=codex:gpt-6.1-sol@high" --json
+  harma select --accept --json      # only when the user said to accept all proposals
+  ```
+- The user can also run `harma select` in their own terminal.
+
+`harma select --show --json` lists the current choices. Never record a choice the user did not
+make. A saved choice is **not** consent to start an agent: each dispatch still needs its own yes.
+
 Then propose the dispatch and, after consent:
 ```
-harma dispatch --name <agent-name> --model <harness>:<model> --effort <e> --task-type <tipo> \
-  --prompt-file <brief.md> --yes
+harma dispatch --name <agent-name> --task-type <tipo> --prompt-file <brief.md> --yes
 ```
+With `--task-type` and no `--model`, dispatch uses the user's choice for that job, otherwise the
+top route candidate. `--model <harness>:<model> --effort <e>` overrides both; use it only when the
+user asked for that model.
 Agent names: lowercase, `[a-z][a-z0-9_-]{0,31}`, unique among open agents (`planner`, `builder`,
 `review-1`). Write a self-contained brief: goal, files, constraints, what "done" means, and how to
 report back (e.g. "write your result to `.harma/out/<name>.md`").
@@ -117,7 +141,7 @@ says what to install. Do not start, stop or restart a herdr/hc server yourself.
 
 ## Files
 
-- `.harma/config.json` — orchestrator, policy, budgets, thresholds, routing overrides.
+- `.harma/config.json` — orchestrator, the user's model choices (`roster`), policy, budgets, thresholds, routing overrides.
 - `.harma/agents.jsonl` — append-only log: started, session, prompted, closed, resumed.
 - `.harma/cache/` — last inventory, credits, rank (each with `fetched_at`).
 

@@ -1,11 +1,11 @@
 import {
   cmdInit, cmdModels, cmdCredits, cmdRank, cmdRoute, cmdDispatch, cmdSend, cmdRead,
-  cmdStatus, cmdCosts, cmdCleanup, cmdResume,
+  cmdStatus, cmdCosts, cmdCleanup, cmdResume, cmdSelect,
 } from './commands.mjs';
 import { cmdInstall, cmdUninstall, cmdDoctor } from './install.mjs';
 import { HarmaError } from './util.mjs';
 
-const BOOLEAN = new Set(['json', 'yes', 'wait', 'refresh', 'dry-run', 'force', 'all', 'print-only', 'help', 'version', 'workspace']);
+const BOOLEAN = new Set(['json', 'yes', 'wait', 'refresh', 'dry-run', 'force', 'all', 'print-only', 'help', 'version', 'workspace', 'open', 'accept', 'show', 'close-tab']);
 
 export function parseArgs(argv) {
   const flags = { _: [] };
@@ -37,6 +37,11 @@ Conoscere le risorse
   rank [--refresh] [--top N]     intelligenza per modello × effort (Artificial Analysis)
   route <tipo> [--author h:m]    classifica per: pianificazione, sviluppo, review, debugging, ricerca, estrazione
 
+Scegliere i modelli (l'utente valida o cambia le proposte)
+  select                         TUI: modello ed effort per orchestratore e per ogni lavoro
+  select --open [--wait]         apre la TUI in un tab herdr (o terminale hc) e aspetta il salvataggio
+  select --accept | --set "sviluppo=codex:gpt-6.1-sol@high,review=none" | --show
+
 Delegare (con policy "confirm" serve --yes, dopo il consenso dell'utente)
   dispatch --name <n> (--model h:m [--effort e] | --task-type <tipo>) [--prompt "…" | --prompt-file f] [--wait] [--yes]
   send <nome> "<testo>" [--wait] [--yes]
@@ -59,7 +64,7 @@ Installazione
 const COMMANDS = {
   init: cmdInit, models: cmdModels, credits: cmdCredits, rank: cmdRank, route: cmdRoute,
   dispatch: cmdDispatch, send: cmdSend, read: cmdRead, status: cmdStatus, costs: cmdCosts,
-  cleanup: cmdCleanup, resume: cmdResume, install: cmdInstall, uninstall: cmdUninstall, doctor: cmdDoctor,
+  cleanup: cmdCleanup, resume: cmdResume, select: cmdSelect, install: cmdInstall, uninstall: cmdUninstall, doctor: cmdDoctor,
 };
 
 export async function main(argv, opts = {}) {

@@ -127,6 +127,17 @@ export class HerdrBackend {
     return { ok: res.ok, detail: res.ok ? 'tab chiuso' : res.stderr.trim() };
   }
 
+  /** A focused tab in the project workspace running a shell command (used for the select TUI). */
+  async openTab({ root, project, label, command }) {
+    const ws = await this.ensureWorkspace(root, project);
+    const tab = okJson(await this.exec(['tab', 'create', '--workspace', ws.id, '--cwd', root, '--label', label, '--focus']), 'herdr tab create');
+    const tabId = tab?.result?.tab?.tab_id;
+    const paneId = tab?.result?.root_pane?.pane_id;
+    if (!tabId || !paneId) throw new HarmaError('herdr tab create: risposta senza tab_id/pane_id');
+    okJson(await this.exec(['pane', 'run', paneId, command]), 'herdr pane run');
+    return { tab: tabId, pane: paneId, workspace: ws.id, workspaceCreated: ws.created };
+  }
+
   /** Only for the workspace harma created for this project (config.herdr.workspace_id). */
   async closeWorkspace(id) {
     const res = await this.exec(['workspace', 'close', id]);

@@ -21,6 +21,7 @@ if (g === 'workspace' && c === 'get') return (a[2] === 'w' + h.ws ? ok({ workspa
 if (g === 'workspace' && c === 'create') { h.ws++; return ok({ workspace: { workspace_id: 'w' + h.ws }, tab: { tab_id: 'w' + h.ws + ':t0' }, root_pane: { pane_id: 'w' + h.ws + ':p0' } }); }
 if (g === 'workspace' && c === 'close') { h.closedWorkspaces = [...(h.closedWorkspaces ?? []), a[2]]; return ok({ closed: a[2] }); }
 if (g === 'tab' && c === 'create') { h.tab++; const ws = a[a.indexOf('--workspace') + 1]; return ok({ tab: { tab_id: ws + ':t' + h.tab }, root_pane: { pane_id: ws + ':p' + h.tab } }); }
+if (g === 'pane' && c === 'run') return ok({ queued: true });
 if (g === 'tab' && c === 'close') { h.agents = h.agents.filter((x) => x.tab_id !== a[2]); return ok({ closed: a[2] }); }
 if (g === 'agent' && c === 'start') {
   const pane = a[a.indexOf('--pane') + 1];

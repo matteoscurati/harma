@@ -44,6 +44,7 @@ The skill turns that into:
 harma init --orchestrator claude:claude-opus-5-5 --effort high
 harma models && harma credits && harma rank --top 15
 harma route pianificazione
+harma select --open --wait        # you accept or change model + effort per job in a TUI
 harma dispatch --name planner --task-type pianificazione --prompt-file brief.md   # exit 3: asks you
 harma dispatch --name planner --task-type pianificazione --prompt-file brief.md --yes
 harma status
@@ -61,7 +62,10 @@ harma resume planner --yes
 | `credits` | Remaining share per provider: `ampio`, `ok`, `scarso`, `esaurito` or `sconosciuto` |
 | `rank [--refresh]` | AA index and cost per task per model × effort; `--refresh` uses `AA_API_KEY` |
 | `route <type> [--author h:m]` | Top candidates for `pianificazione`, `sviluppo`, `review`, `debugging`, `ricerca` or `estrazione` |
-| `dispatch --name n (--model h:m \| --task-type t)` | Starts an agent; needs `--yes` under the `confirm` policy |
+| `select` | TUI: for the orchestrator and each job, accept the proposal or pick model and effort |
+| `select --open [--wait]` | Opens that TUI in a focused herdr tab (or an hc terminal) and waits for your save |
+| `select --accept \| --set "job=h:m@effort,…" \| --show` | The same without a TUI |
+| `dispatch --name n (--model h:m \| --task-type t)` | Starts an agent (with `--task-type`, your choice from `select` first); needs `--yes` under the `confirm` policy |
 | `send n "text"` / `read n` | Gives an open agent more work / reads its screen |
 | `status` | Every open agent: model, effort, live state, age, session id |
 | `costs` | Estimated cost per agent, credits per provider, delegation advice |
@@ -71,6 +75,18 @@ harma resume planner --yes
 Every command takes `--json`. Exit code 3 means "needs the user's confirmation". Exit code 4
 from `dispatch` means the agent started but is waiting on a dialog (for example "trust this
 folder?"), so the task was not sent.
+
+## Choosing the models yourself
+
+`harma select` shows one row for the orchestrator and one per job: the proposal (from routing)
+and your choice. Keys: ↑↓ move · enter pick a model, then an effort, each shown with its AA index,
+cost per task and credit state · `a` accept the proposal · `A` accept all · `x` clear · `s` save ·
+`q` quit. Choices go to `.harma/config.json` → `roster`, marked `proposta` or `utente`. A job can
+also be set to "no model".
+
+An agent driving harma has no terminal of its own, so it runs `harma select --open --wait`. That
+opens the screen in a focused herdr tab, and the agent continues once you save. Saving choices
+never starts an agent; each dispatch still asks.
 
 ## How it decides
 
