@@ -1,0 +1,49 @@
+{
+  "name": "harma",
+  "version": "0.1.0",
+  "description": "A skill for Claude Code and Codex that lets one orchestrator model run a project: it inventories the models on your machine, reads their credits and intelligence per effort, routes work to them through herdr or herdr-core, watches cost, and saves every agent's session before closing it.",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "skill",
+    "orchestration",
+    "multi-agent",
+    "herdr",
+    "coding-agents"
+  ],
+  "author": "matteoscurati",
+  "license": "MIT",
+  "homepage": "https://github.com/matteoscurati/harma#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matteoscurati/harma.git"
+  },
+  "bugs": {
+    "url": "https://github.com/matteoscurati/harma/issues"
+  },
+  "type": "module",
+  "bin": {
+    "harma": "bin/harma.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "skill/",
+    "data/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "doctor": "node bin/harma.mjs doctor",
+    "import-catalog": "node scripts/import-catalog.mjs",
+    "prepublishOnly": "npm test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
