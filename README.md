@@ -21,10 +21,10 @@ effort) responsible for a project. It then:
 ## Install
 
 ```sh
-npx harma install            # skill for Claude Code and Codex (~/.claude/skills, ~/.codex/skills)
-npx harma install --target codex
-npm i -g harma               # optional: the CLI without npx
-npx harma doctor             # checks Node, backends, agent CLIs, CodexBar, AA key
+npx harma-kit install        # skill for Claude Code and Codex (~/.claude/skills, ~/.codex/skills)
+npx harma-kit install --target codex
+npm i -g harma-kit           # optional: the CLI without npx
+npx harma-kit doctor         # checks Node, backends, agent CLIs, CodexBar, AA key
 ```
 
 You need Node ≥ 20, at least one agent CLI (`claude`, `codex`, `agy`, `kimi`, `grok`, `muse`,

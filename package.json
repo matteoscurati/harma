@@ -1,5 +1,5 @@
 {
-  "name": "harma",
+  "name": "harma-kit",
   "version": "0.1.0",
   "description": "A skill for Claude Code and Codex that lets one orchestrator model run a project: it inventories the models on your machine, reads their credits and intelligence per effort, routes work to them through herdr or herdr-core, watches cost, and saves every agent's session before closing it.",
   "keywords": [
@@ -23,7 +23,8 @@
   },
   "type": "module",
   "bin": {
-    "harma": "bin/harma.mjs"
+    "harma": "bin/harma.mjs",
+    "harma-kit": "bin/harma.mjs"
   },
   "files": [
     "bin/",

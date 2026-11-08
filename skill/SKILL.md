@@ -9,7 +9,7 @@ You are, or are about to become, the **orchestrator** of this project: the model
 agent does which job, watches them, and keeps the workspace clean. The `harma` CLI does the
 mechanics; you do the judgement and talk to the user.
 
-Run it as `harma <command>` if installed globally, otherwise `npx -y harma <command>`.
+Run it as `harma <command>` if installed globally, otherwise `npx -y harma-kit <command>` (the package is `harma-kit`, the command is `harma`).
 Add `--json` whenever you will read the output yourself.
 
 ## Hard rules

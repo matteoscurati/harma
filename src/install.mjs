@@ -44,7 +44,7 @@ export async function cmdInstall(flags, opts = {}) {
     writeFileSync(join(dest, MARKER), `harma ${version()}\n`);
     lines.push(`${host}: skill installata in ${dest}`);
   }
-  lines.push('', 'Per la CLI: npm i -g harma  (oppure usa sempre npx harma <comando>)', 'Poi, nel progetto: harma init --orchestrator <harness>:<model> --effort <level>');
+  lines.push('', 'Per la CLI: npm i -g harma-kit  (comando: harma; oppure npx harma-kit <comando>)', 'Poi, nel progetto: harma init --orchestrator <harness>:<model> --effort <level>');
   out(lines.join('\n'));
 }
 
@@ -93,7 +93,7 @@ export async function cmdDoctor(flags, opts = {}) {
   add('chiave Artificial Analysis', Boolean(aaKey(env)), aaKey(env) ? 'presente (harma rank --refresh)' : 'assente: si usa lo snapshot incluso');
 
   for (const [host, dest] of Object.entries(skillTargets('both', env))) {
-    add(`skill per ${host}`, existsSync(join(dest, 'SKILL.md')), existsSync(dest) ? dest : `non installata (npx harma install --target ${host})`);
+    add(`skill per ${host}`, existsSync(join(dest, 'SKILL.md')), existsSync(dest) ? dest : `non installata (npx harma-kit install --target ${host})`);
   }
 
   const failed = checks.filter((c) => c.required && !c.ok);
