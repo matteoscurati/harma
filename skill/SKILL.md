@@ -65,8 +65,10 @@ on a strong model at reasonable cost; review on a different vendor from the auth
 and summaries on the cheapest model above the floor.
 
 ### 3b. Let the user validate the models
-Before the first dispatch, the user decides which model and effort each job gets. They can accept
-your proposals or pick their own. Use one of these:
+Before the first dispatch, the user decides which models and efforts each job gets. They can accept
+your proposals or pick their own. A job can have several models in order of preference: at dispatch
+harma takes the first one whose CLI is installed and whose credits are usable. It passes over a
+model with `scarso` credits for a later one with more. Use one of these:
 
 - **TUI in herdr (preferred when herdr runs):**
   ```
@@ -78,7 +80,7 @@ your proposals or pick their own. Use one of these:
   Show the proposal per job and offer "accept" or alternatives from `harma rank`, then record
   exactly what they chose:
   ```
-  harma select --set "pianificazione=claude:claude-opus-5-5@xhigh,sviluppo=codex:gpt-6.1-sol@high" --json
+  harma select --set "pianificazione=claude:claude-opus-5-5@xhigh,sviluppo=codex:gpt-6.1-sol@high|claude:claude-sonnet-5-5@high" --json
   harma select --accept --json      # only when the user said to accept all proposals
   ```
 - The user can also run `harma select` in their own terminal.
@@ -90,8 +92,9 @@ Then propose the dispatch and, after consent:
 ```
 harma dispatch --name <agent-name> --task-type <tipo> --prompt-file <brief.md> --yes
 ```
-With `--task-type` and no `--model`, dispatch uses the user's choice for that job, otherwise the
-top route candidate. `--model <harness>:<model> --effort <e>` overrides both; use it only when the
+With `--task-type` and no `--model`, dispatch uses the user's list for that job, otherwise the
+top route candidate. The plan's `why` says which model on the list it took and which it skipped
+(for example "n.1 … saltato: crediti scarso"). Tell the user when it is not their first choice. `--model <harness>:<model> --effort <e>` overrides both; use it only when the
 user asked for that model.
 Agent names: lowercase, `[a-z][a-z0-9_-]{0,31}`, unique among open agents (`planner`, `builder`,
 `review-1`). Write a self-contained brief: goal, files, constraints, what "done" means, and how to

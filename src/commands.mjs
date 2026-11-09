@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { loadCatalog } from './catalog.mjs';
+import { loadCatalog, harnesses } from './catalog.mjs';
 import { parseTarget, effortValues, launchSpec, resumeArgv, meta } from './harness.mjs';
 import {
   projectRoot, loadConfig, saveConfig, appendEvent, readEvents, agentsFromEvents,
@@ -13,7 +13,7 @@ import { route, taskProfile, TASK_PROFILES } from './route.mjs';
 import { selectBackend, HerdrBackend, HcBackend, projectId, checkAgentName } from './backends.mjs';
 import { usageFor, estimateCost, findCodexSession } from './usage.mjs';
 import { table, HarmaError, now, which, readJson, run } from './util.mjs';
-import { modelOptions, selectionRows, applySelection, parseSetSpec, describe, ORCHESTRATOR, samePick } from './roster.mjs';
+import { modelOptions, selectionRows, applySelection, parseSetSpec, describe, describePick, ORCHESTRATOR, rosterPicks, choosePick } from './roster.mjs';
 import { initState, runTui } from './tui.mjs';
 import { statePath } from './state.mjs';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +27,13 @@ function ctx(opts) {
   const root = projectRoot(opts.cwd ?? process.cwd());
   const catalog = loadCatalog({ env });
   return { env, root, catalog, out: opts.out ?? ((s) => process.stdout.write(s + '\n')) };
+}
+
+/** Is the CLI that runs this harness on PATH? */
+function installedHarness(c, harness) {
+  const h = harnesses(c.catalog)[harness];
+  if (!h) return false;
+  return Boolean(which(meta(harness).interactiveBinary ?? h.binary.split(' ')[0], c.env));
 }
 
 const emit = (c, flags, data, text) => c.out(flags.json ? JSON.stringify(data, null, 2) : text());
@@ -153,9 +160,15 @@ export async function cmdRoute(flags, opts = {}) {
   const res = route(type, { rankRows: rankRows(c.catalog, inv.models), credits: credits.rows, config: cfg, author, top: Number(flags.top ?? 5) });
   if (!res) throw new HarmaError(`Tipo di lavoro sconosciuto: ${type}`, { hint: `Tipi: ${Object.keys(TASK_PROFILES).join(', ')}` });
   res.user_choice = cfg.roster?.[res.profile.type] ?? null;
+  if (res.user_choice && !res.user_choice.none) {
+    const chosen = choosePick(rosterPicks(res.user_choice), credits.rows, { installed: (h) => installedHarness(c, h) });
+    res.user_pick = chosen.pick ? { ...chosen.pick, notes: chosen.notes } : null;
+  }
   emit(c, flags, res, () => [
     `Routing — ${res.profile.label}`,
-    res.user_choice ? `Scelta dell'utente (harma select): ${describe(res.user_choice)} — dispatch --task-type ${res.profile.type} userà questa.` : 'Nessuna scelta dell\'utente per questo lavoro: proponila con harma select.',
+    !res.user_choice ? 'Nessuna scelta dell\'utente per questo lavoro: proponila con harma select.'
+      : res.user_choice.none ? 'L\'utente ha scelto: nessun modello per questo lavoro.'
+        : `Scelta dell'utente (harma select): ${describe(res.user_choice)}\n  ora dispatch --task-type ${res.profile.type} userebbe: ${res.user_pick ? `${describePick(res.user_pick)} (n.${res.user_pick.position})${res.user_pick.notes.length ? ` — ${res.user_pick.notes.join('; ')}` : ''}` : 'nessuno: tutti i modelli scelti sono senza crediti o non installati'}`,
     table(res.candidates.map((r, i) => ({ '#': i + 1, modello: `${r.harness}:${r.model}`, effort: r.effort, punteggio: r.score, motivi: r.why }))),
     res.candidates.length ? `\nPer avviarlo: harma dispatch --name <nome> --task-type ${res.profile.type} --model ${res.candidates[0].harness}:${res.candidates[0].model} --effort ${res.candidates[0].effort} --prompt "<compito>"` : '\nNessun candidato: abbassa min_index in .harma/config.json routing o controlla crediti e CLI.',
   ].join('\n'));
@@ -183,7 +196,17 @@ export async function cmdDispatch(flags, opts = {}) {
     const type = taskProfile(flags['task-type'], cfg).type;
     const chosen = cfg.roster[type];
     if (chosen.none) throw new HarmaError(`Per ${type} l'utente ha scelto di non usare nessun modello`, { hint: 'Cambia la scelta con harma select, o passa --model esplicitamente' });
-    pick = { harness: chosen.harness, model: chosen.model, effort: flags.effort ?? chosen.effort, why: `scelta dell'utente per ${type} (harma select, ${chosen.source})` };
+    const picks = rosterPicks(chosen);
+    const inv = await currentInventory(c, cfg);
+    const credits = await currentCredits(c, cfg, inv, opts);
+    const { pick: p, rated, notes } = choosePick(picks, credits.rows, { installed: (h) => installedHarness(c, h) });
+    if (!p) {
+      throw new HarmaError(`Nessuno dei modelli scelti per ${type} è utilizzabile ora`, {
+        hint: `${rated.map((r) => `n.${r.position} ${describePick(r)}: ${r.skip}`).join('; ')} — cambia la lista con harma select, o passa --model esplicitamente`,
+      });
+    }
+    const where = picks.length > 1 ? `n.${p.position} di ${picks.length}` : 'unica';
+    pick = { harness: p.harness, model: p.model, effort: flags.effort ?? p.effort, why: `scelta dell'utente per ${type} (harma select, ${chosen.source}; ${where}, crediti ${p.credit})${notes.length ? ` — ${notes.join('; ')}` : ''}` };
   } else {
     if (!flags['task-type']) throw new HarmaError('Serve --model <harness>:<model> oppure --task-type <tipo>');
     const inv = await currentInventory(c, cfg);
@@ -551,7 +574,7 @@ export async function cmdSelect(flags, opts = {}) {
   let finalRows = rows;
   if (flags.accept || flags.set) {
     if (flags.accept) {
-      finalRows = finalRows.map((r) => (r.proposal ? { ...r, choice: { ...r.proposal, source: 'proposta' } } : r));
+      finalRows = finalRows.map((r) => (r.proposal ? { ...r, choice: { picks: [...r.proposal.picks], source: 'proposta' } } : r));
     }
     if (flags.set) {
       const parsed = parseSetSpec(flags.set, { catalog: c.catalog, parseTarget, effortValues });
@@ -592,9 +615,13 @@ function showSelection(c, flags, rows, heading = 'Modelli per lavoro') {
     lavoro: r.type,
     proposta: describe(r.proposal),
     scelta: describe(r.choice),
-    fonte: !r.choice ? '—' : r.type === ORCHESTRATOR ? 'configurato' : (r.choice.none ? 'utente' : samePick(r.choice, r.proposal) ? 'proposta accettata' : 'utente'),
+    fonte: !r.choice ? '—' : r.type === ORCHESTRATOR ? 'configurato' : (r.choice.none ? 'utente' : r.choice.source === 'proposta' ? 'proposta accettata' : 'utente'),
   }));
-  emit(c, flags, { rows: data }, () => `${heading}\n${table(data)}`);
+  // One block per job: the choice can be several models long, a table would wrap.
+  emit(c, flags, { rows: data }, () => [heading, ...data.flatMap((d) => [
+    `${d.lavoro}: ${d.scelta}${d.fonte !== '—' ? `  (${d.fonte})` : ''}`,
+    ...(d.proposta !== d.scelta ? [`  proposta: ${d.proposta}`] : []),
+  ])].join('\n'));
   return { rows: data };
 }
 

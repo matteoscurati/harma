@@ -4,13 +4,18 @@
 
 - `harma select`: a TUI where you accept the orchestrator's proposals or pick model and effort
   for the orchestrator and for each job. Each option shows its AA index, cost per task and credit
-  state. Choices are saved in `.harma/config.json` → `roster`.
+  state. Choices are saved per project in `.harma/config.json` → `roster`.
+- Several models per job, in order of preference: add, remove and reorder them in the TUI, or use
+  `--set "job=h:m@e|h:m@e"`. The proposal pairs the best candidate with a backup on another CLI.
+  At dispatch harma takes the first model whose CLI is installed and whose credits are not
+  exhausted. It passes over one with `scarso` credits for a later one with more, and records
+  which models it skipped and why.
 - `select --open --wait`: opens the TUI in a focused herdr tab (or an hc terminal) for an agent
   that has no terminal, and returns your choices when you save.
 - `select --accept`, `--set "job=harness:model@effort,…"` (or `job=none`), `--show`: the same
   without a TUI.
-- `route` shows your choice; `dispatch --task-type` uses it before the routing proposal. A saved
-  choice is not consent to start an agent.
+- `route` shows your list and which model on it dispatch would use now; `dispatch --task-type`
+  uses it before the routing proposal. A saved choice is not consent to start an agent.
 
 ## 0.1.0 — 2026-11-08
 

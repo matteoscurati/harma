@@ -38,9 +38,10 @@ Conoscere le risorse
   route <tipo> [--author h:m]    classifica per: pianificazione, sviluppo, review, debugging, ricerca, estrazione
 
 Scegliere i modelli (l'utente valida o cambia le proposte)
-  select                         TUI: modello ed effort per orchestratore e per ogni lavoro
+  select                         TUI: modello ed effort per l'orchestratore; per ogni lavoro uno o più
+                                 modelli in ordine (al dispatch: il primo con crediti utilizzabili)
   select --open [--wait]         apre la TUI in un tab herdr (o terminale hc) e aspetta il salvataggio
-  select --accept | --set "sviluppo=codex:gpt-6.1-sol@high,review=none" | --show
+  select --accept | --set "sviluppo=codex:gpt-6.1-sol@high|claude:claude-sonnet-5-5@high,review=none" | --show
 
 Delegare (con policy "confirm" serve --yes, dopo il consenso dell'utente)
   dispatch --name <n> (--model h:m [--effort e] | --task-type <tipo>) [--prompt "…" | --prompt-file f] [--wait] [--yes]

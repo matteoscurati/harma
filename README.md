@@ -10,7 +10,8 @@ effort) responsible for a project. It then:
    a declared budget, or local session logs);
 3. ranks every model × effort by the [Artificial Analysis](https://artificialanalysis.ai/models)
    Intelligence Index and cost per task;
-4. proposes which model takes planning, development, review, debugging, research or extraction;
+4. proposes which models take planning, development, review, debugging, research or extraction,
+   and lets you accept or change them, with several models per job in order of preference;
 5. starts agents in [herdr](https://herdr.dev) tabs or [herdr-core](https://github.com/herdrdev/herdr-core)
    terminals, **only after you say yes**;
 6. shows what each agent is doing;
@@ -62,10 +63,10 @@ harma resume planner --yes
 | `credits` | Remaining share per provider: `ampio`, `ok`, `scarso`, `esaurito` or `sconosciuto` |
 | `rank [--refresh]` | AA index and cost per task per model × effort; `--refresh` uses `AA_API_KEY` |
 | `route <type> [--author h:m]` | Top candidates for `pianificazione`, `sviluppo`, `review`, `debugging`, `ricerca` or `estrazione` |
-| `select` | TUI: for the orchestrator and each job, accept the proposal or pick model and effort |
+| `select` | TUI: accept the proposals or pick model and effort, for the orchestrator and for each job (one or more models, in order) |
 | `select --open [--wait]` | Opens that TUI in a focused herdr tab (or an hc terminal) and waits for your save |
-| `select --accept \| --set "job=h:m@effort,…" \| --show` | The same without a TUI |
-| `dispatch --name n (--model h:m \| --task-type t)` | Starts an agent (with `--task-type`, your choice from `select` first); needs `--yes` under the `confirm` policy |
+| `select --accept \| --set "job=h:m@effort\|h:m@effort,…" \| --show` | The same without a TUI |
+| `dispatch --name n (--model h:m \| --task-type t)` | Starts an agent (with `--task-type`, the first model on your list with usable credits); needs `--yes` under the `confirm` policy |
 | `send n "text"` / `read n` | Gives an open agent more work / reads its screen |
 | `status` | Every open agent: model, effort, live state, age, session id |
 | `costs` | Estimated cost per agent, credits per provider, delegation advice |
@@ -78,11 +79,24 @@ folder?"), so the task was not sent.
 
 ## Choosing the models yourself
 
-`harma select` shows one row for the orchestrator and one per job: the proposal (from routing)
-and your choice. Keys: ↑↓ move · enter pick a model, then an effort, each shown with its AA index,
-cost per task and credit state · `a` accept the proposal · `A` accept all · `x` clear · `s` save ·
-`q` quit. Choices go to `.harma/config.json` → `roster`, marked `proposta` or `utente`. A job can
-also be set to "no model".
+`harma select` shows one row for the orchestrator and one per job, each with the proposal from
+routing and your choice. Keys: ↑↓ move · enter open · `a` accept the proposal · `A` accept all ·
+`x` clear · `s` save · `q` quit. Models and efforts are listed with their AA index, cost per task
+and credit state.
+
+A job can have **several models, in order of preference**. Enter opens a job's list: `+` add,
+`d` remove, `K`/`J` (or shift ↑↓) move up or down, enter change model or effort. The proposal gives
+each job the best candidate plus a backup on another CLI. At dispatch, harma takes the first model
+on the list, with two exceptions. It skips a model whose CLI is missing or whose credits are
+exhausted. It also passes over a model with `scarso` credits when a later one has more, and says
+which models it skipped and why. A job can also be set to "no model".
+
+Choices go to `.harma/config.json` → `roster`, marked `proposta` or `utente`. Each project has its
+own. Without a TUI:
+
+```sh
+harma select --set "sviluppo=codex:gpt-6.1-sol@xhigh|claude:claude-sonnet-5-5@high,review=none"
+```
 
 An agent driving harma has no terminal of its own, so it runs `harma select --open --wait`. That
 opens the screen in a focused herdr tab, and the agent continues once you save. Saving choices
