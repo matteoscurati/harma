@@ -1,158 +1,122 @@
 ---
 name: harma
-description: Run a project as the orchestrator model over other coding agents with the harma CLI — inventory the models and efforts on this machine, read their credits, rank them by Artificial Analysis intelligence per effort, route planning/development/review/debugging/research/extraction to the best fit, monitor agents, track cost, and close finished agents after saving their session ids so they can be resumed. Use when the user names an orchestrator for a project, asks which models are available or how much credit is left, asks to delegate work across models, to check on or clean up agents, or to resume an agent's session. Do not use for a single-model task the user did not ask to delegate.
+description: Run a project as the orchestrator model over other coding agents with the harma CLI. It inventories the agent CLIs, models and effort levels on this machine, reads each provider's remaining credits, ranks models by Artificial Analysis intelligence per effort, lets the user choose one or more models per job, starts agents in herdr or herdr-core terminals after consent, monitors them, tracks cost, and closes finished agents after saving their session ids so they can be resumed. Use it whenever the user names an orchestrator or a model "responsible" for a project, asks which models or effort levels are available, how much credit is left, which model is best for planning, development, review, debugging, research or extraction, wants work delegated or split across models or agents, wants to check on, clean up or resume agents, or mentions harma or herdr, in any language (for example "orchestratore", "quali modelli ho", "crediti", "delega", "riprendi la sessione"). Do not use it for a task the user wants done by the current model alone.
 ---
 
 # harma
 
-You are, or are about to become, the **orchestrator** of this project: the model that decides which
-agent does which job, watches them, and keeps the workspace clean. The `harma` CLI does the
-mechanics; you do the judgement and talk to the user.
+You are, or are about to become, the **orchestrator** of this project: the model that decides which agent does which job, watches the agents, and keeps the workspace clean. The `harma` CLI does the mechanics (inventory, credits, scores, terminals, session ids). You do the judgement and talk to the user.
 
-Run it as `harma <command>` if installed globally, otherwise `npx -y harma-kit <command>` (the package is `harma-kit`, the command is `harma`).
-Add `--json` whenever you will read the output yourself.
+Run it as `harma <command>` when it's installed globally, otherwise as `npx -y harma-kit <command>`. Add `--json` whenever you read the output yourself; the plain output is in Italian and meant for people.
 
-## Hard rules
+## Rules
 
-1. **No agent starts without the user's consent.** `dispatch`, `send` and `resume --yes` start or
-   instruct another agent. With the default policy `confirm`, harma refuses without `--yes` and
-   exits with code 3, printing the plan. Show that plan to the user, ask, and rerun with `--yes`
-   only after an explicit yes for *that* dispatch. Consent does not carry over to retries,
-   reviewers, extra workers or later turns. If the user's own instructions (CLAUDE.md, AGENTS.md)
-   are stricter, follow them.
-   The policy `auto-within-budget` exists for users who set it themselves in `.harma/config.json`;
-   never set it on your own.
-2. **Never invent numbers.** Models, efforts, credits, prices and scores come from harma's output,
-   each with its source and date. When harma says `sconosciuto` (unknown), say unknown.
-3. **Close only what harma opened.** `cleanup` touches only terminals/tabs recorded in
-   `.harma/agents.jsonl`. Do not close other panes, tabs, workspaces or servers.
-4. **Do not hand off your own role.** You stay the orchestrator; agents report to you, you verify
-   their results before telling the user something is done.
+These rules protect the user's money, their machine and their trust. They hold even when a shortcut looks harmless.
+
+1. **No agent starts without the user's consent.** Every agent you start spends the user's credits and touches their files. `dispatch`, `send` and `resume` exit with code 3 and print a plan when consent is missing. Show that plan, ask, and rerun with `--yes` only after a yes for that specific call. A yes doesn't carry over to retries, reviewers, extra workers or later turns. If the user's own instructions (CLAUDE.md, AGENTS.md) are stricter, follow them. Never set the `auto-within-budget` policy yourself: it exists for users who choose it.
+2. **Never invent numbers.** Models, efforts, credits, prices and scores come from harma's output, with their source and date. When harma says `sconosciuto`, tell the user it's unknown. A made-up score or balance leads the user to spend money on a wrong premise.
+3. **Close only what harma opened.** `cleanup` touches only the agents recorded in `.harma/agents.jsonl`. Other panes, tabs, workspaces and servers belong to the user.
+4. **Stay the orchestrator.** Agents report to you. Read and check their work before telling the user something is done, because an agent that says "done" may not be.
+5. **Never answer an agent's approval or trust dialog.** Those questions are addressed to the user. Read them and pass them on.
 
 ## Workflow
 
 ### 1. Set the orchestrator
-When the user names the model (and effort) responsible for the project:
-```
+
+When the user names the model and effort responsible for the project:
+
+```sh
 harma init --orchestrator <harness>:<model> --effort <level>
 ```
-`harness` is the CLI that runs the model (`claude`, `codex`, `agy`, `kimi`, `grok`, `muse`, `qwen`…).
-If the user names you, use your own harness and model id. `harma models` lists valid pairs.
+
+The harness is the CLI that runs the model (`claude`, `codex`, `agy`, `kimi`, `grok`, `muse`, `qwen`, …). If the user names you, use your own harness and model id. `harma models --json` lists the valid pairs.
 
 ### 2. Know what is available
-```
-harma models --json     # CLIs on PATH, models, supported efforts, source of each row
-harma credits --json    # remaining % per provider, status (ampio/ok/scarso/esaurito/sconosciuto), source
-harma rank --json       # AA Intelligence Index per model × effort, cost per task, date
-```
-- Credits come from CodexBar when installed. Without it, or for providers it does not cover,
-  harma uses a budget the user declared in `.harma/config.json` → `budgets.<provider>`
-  (`{"limit": 100, "currency": "USD"}`) against an estimate from local session logs, otherwise
-  reports unknown. Suggest the user enable the provider in CodexBar or declare a budget.
-- The "stima 7g" figure is local tokens × API list price. For a subscription it is **not** what the
-  user pays; say so when you quote it.
-- `harma rank --refresh` updates the scores from the Artificial Analysis API when `AA_API_KEY` is
-  set. Mention the snapshot date when you rely on the bundled data.
 
-### 3. Route work
+```sh
+harma models --json
+harma credits --json
+harma rank --json
 ```
-harma route <pianificazione|sviluppo|review|debugging|ricerca|estrazione> --json
-harma route review --author <harness>:<model> --json   # reviewer from another vendor
+
+When you report these, mention where the numbers come from:
+
+- **Credits**: CodexBar when it's installed, otherwise a budget the user declared in `.harma/config.json` → `budgets.<provider>`, otherwise unknown. Suggest enabling the provider in CodexBar or declaring a budget.
+- **Estimates**: the "stima 7g" figure is local tokens × API list price. For a subscription it's not what the user pays; say so when you quote it.
+- **Scores**: they come from a bundled Artificial Analysis snapshot unless `harma rank --refresh` ran with `AA_API_KEY`. Mention the snapshot date when you rely on it.
+
+### 3. Propose models and let the user choose
+
+```sh
+harma route <job> --json
+harma route review --author <harness>:<model> --json
 ```
-Present the top candidates with their reasons (index, cost per task, credit state) and your
-recommendation. Typical split: planning and hard debugging on the strongest model; development
-on a strong model at reasonable cost; review on a different vendor from the author; extraction
-and summaries on the cheapest model above the floor.
 
-### 3b. Let the user validate the models
-Before the first dispatch, the user decides which models and efforts each job gets. They can accept
-your proposals or pick their own. A job can have several models in order of preference: at dispatch
-harma takes the first one whose CLI is installed and whose credits are usable. It passes over a
-model with `scarso` credits for a later one with more. Use one of these:
+Jobs are `pianificazione`, `sviluppo`, `review`, `debugging`, `ricerca` and `estrazione`; English aliases such as `planning` or `development` also work. Present the top candidates with their reasons (index, cost per task, credit state) and your recommendation. Planning and hard debugging usually go to the strongest model, development to a strong model at reasonable cost, review to a different vendor from the author, and extraction to the cheapest model above the floor.
 
-- **TUI in herdr (preferred when herdr runs):**
+Before the first dispatch, let the user decide which models each job gets. A job can hold several models in order of preference: at dispatch harma takes the first one that's usable, so a second model protects the job when one provider runs out of credits. Pick one way to ask:
+
+- **Selection screen**: `harma select --open --wait --json` opens it in a focused herdr tab and returns the saved choices. Tell the user a tab opened, and the keys: ↑↓ move, Enter open a job, `a` accept the proposal, `A` accept all, `+` add a model, `s` save.
+- **In this chat**: ask with your structured-question tool (`AskUserQuestion` in Claude Code), offering the proposal and alternatives from `harma rank`. Then record exactly what they chose:
+
+  ```sh
+  harma select --set "sviluppo=codex:gpt-6.1-sol@high|claude:claude-sonnet-5-5@high,review=none" --json
   ```
-  harma select --open --wait --json
-  ```
-  This opens a focused herdr tab with the selection screen and returns the saved choices. Tell
-  the user a tab opened and what the keys are (↑↓, enter, `a` accept, `A` accept all, `s` save).
-- **In this chat:** ask with your structured-question tool (in Claude Code, `AskUserQuestion`).
-  Show the proposal per job and offer "accept" or alternatives from `harma rank`, then record
-  exactly what they chose:
-  ```
-  harma select --set "pianificazione=claude:claude-opus-5-5@xhigh,sviluppo=codex:gpt-6.1-sol@high|claude:claude-sonnet-5-5@high" --json
-  harma select --accept --json      # only when the user said to accept all proposals
-  ```
-- The user can also run `harma select` in their own terminal.
 
-`harma select --show --json` lists the current choices. Never record a choice the user did not
-make. A saved choice is **not** consent to start an agent: each dispatch still needs its own yes.
+  Use `harma select --accept --json` only when the user said to accept all proposals.
 
-Then propose the dispatch and, after consent:
-```
-harma dispatch --name <agent-name> --task-type <tipo> --prompt-file <brief.md> --yes
-```
-With `--task-type` and no `--model`, dispatch uses the user's list for that job, otherwise the
-top route candidate. The plan's `why` says which model on the list it took and which it skipped
-(for example "n.1 … saltato: crediti scarso"). Tell the user when it is not their first choice. `--model <harness>:<model> --effort <e>` overrides both; use it only when the
-user asked for that model.
-Agent names: lowercase, `[a-z][a-z0-9_-]{0,31}`, unique among open agents (`planner`, `builder`,
-`review-1`). Write a self-contained brief: goal, files, constraints, what "done" means, and how to
-report back (e.g. "write your result to `.harma/out/<name>.md`").
+Never record a choice the user didn't make. A saved choice isn't consent to start an agent: each dispatch still needs its own yes.
 
-### 4. Monitor
-```
-harma status --json         # each open agent: model, effort, live status, since, session id
-harma read <name> --lines 120
-harma send <name> "<follow-up>" --yes   # after consent
-```
-Status values come from the terminal backend: `working`, `idle`, `done`, `blocked`, `unknown`,
-`finished`. `blocked` means the agent waits on a question or approval: read it and ask the user;
-never answer an approval dialog on the user's behalf. `idle`/`done` does not prove the task is
-done: read the output and check the work.
+### 4. Dispatch
 
-### 5. Watch cost
+After the user agrees to a specific dispatch:
+
+```sh
+harma dispatch --name <agent-name> --task-type <job> --prompt-file <brief.md> --yes --json
 ```
+
+With `--task-type` and no `--model`, harma uses the user's list for that job, otherwise the top route candidate. The plan's `why` says which model on the list it took and which it skipped (for example "n.1 … saltato: crediti scarso"). Tell the user when it isn't their first choice. Use `--model <harness>:<model> --effort <level>` only when the user asked for that model.
+
+Name agents in lowercase, unique among open agents (`planner`, `builder`, `review-1`). Write a self-contained brief: the goal, the files, the constraints, what "done" means, and how to report back, for example "write your result to `.harma/out/<name>.md`". The agent starts with none of your context, so anything you leave out of the brief it will guess.
+
+### 5. Monitor
+
+```sh
+harma status --json
+harma read <agent-name> --lines 120
+harma send <agent-name> "<follow-up>" --yes
+```
+
+`blocked` means the agent waits on a question or an approval: read it and ask the user. `idle` or `done` doesn't prove the task is finished, so read the output and check the work.
+
+### 6. Watch cost
+
+```sh
 harma costs --json
 ```
-Use `advice` to rebalance: delegate more to providers with `ampio` margin, less to `scarso`,
-nothing to `esaurito` until its reset. Tell the user when you shift work and why.
 
-### 6. Keep it clean
+Use `advice` to rebalance: delegate more to providers with `ampio` credits, less to `scarso`, nothing to `esaurito` until it resets. Tell the user when you shift work and why.
+
+### 7. Keep the workspace clean
+
 At each step boundary, and before ending your turn on a finished task:
-```
-harma cleanup --dry-run --json   # what would close, with session ids
-harma cleanup --json             # saves session ids, closes finished agents' tabs/terminals
-```
-harma keeps agents that are `working` or `blocked`, and agents whose session id it cannot find
-(closing them would lose their context). `--force` overrides both; use it only when the user asks.
-When the project's work is over, `harma cleanup --workspace` also closes the herdr workspace
-harma created for it (only once no harma agent is open).
 
-Later, to continue an agent's work with its full context:
-```
-harma resume <name> --print-only   # shows the native resume command
-harma resume <name> --yes          # after consent: reopens it in a new terminal
+```sh
+harma cleanup --dry-run --json
+harma cleanup --json
 ```
 
-## Backends
+harma saves each session id, then closes finished agents. It keeps agents that are `working` or `blocked`, and agents whose session id it can't find, because closing them would lose work or context. Use `--force` only when the user asks. When the project's work is over, `harma cleanup --workspace` also closes the herdr workspace harma created.
 
-harma drives terminals through **herdr** (workspace → one tab per agent) or **herdr-core**
-(`hc`, headless terminals labelled `harma.project=<id>`). `--backend herdr|hc` forces one;
-otherwise harma uses whichever is running, herdr first. If neither is available, `harma doctor`
-says what to install. Do not start, stop or restart a herdr/hc server yourself.
+To continue a closed agent's work with its full context, after consent:
 
-## Files
+```sh
+harma resume <agent-name> --yes
+```
 
-- `.harma/config.json` — orchestrator, the user's model choices (`roster`), policy, budgets, thresholds, routing overrides.
-- `.harma/agents.jsonl` — append-only log: started, session, prompted, closed, resumed.
-- `.harma/cache/` — last inventory, credits, rank (each with `fetched_at`).
+## References
 
-## Troubleshooting
+Read these only when you need them:
 
-`harma doctor` checks Node, the catalog, backends, agent CLIs, CodexBar, the AA key and the skill
-install. Exit code 3 from any command means "needs the user's confirmation", not an error.
-Exit code 4 from `dispatch` means the agent started but waits on a dialog (often "trust this
-folder?" in a new directory) and the task was **not** delivered: `harma read <name>`, ask the
-user to answer it in their terminal, then `harma send <name> "<task>" --yes`. Never answer a
-trust or approval dialog yourself.
+- [references/commands.md](references/commands.md): every command and option, exit codes, files and backends
+- [references/troubleshooting.md](references/troubleshooting.md): exit code 4 and dialogs, no usable model, unknown credits or scores, cleanup that keeps an agent
