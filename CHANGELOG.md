@@ -2,7 +2,7 @@
 
 All notable changes to harma, newest first. Versions follow [semantic versioning](https://semver.org/).
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-11-09)
 
 You can now choose the models for each job yourself, or accept the orchestrator's proposals:
 
