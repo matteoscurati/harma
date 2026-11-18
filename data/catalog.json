@@ -2,6 +2,11 @@
   "schema_version": 1,
   "generated_at": "2026-11-18",
   "registry_updated": "2026-11-18",
+  "registry_dates": {
+    "models": "2026-11-18",
+    "transports": "2026-11-18",
+    "sources": "2026-11-16"
+  },
   "source": "controller-models registry",
   "attribution": "Intelligence Index and cost per task: Artificial Analysis (https://artificialanalysis.ai/)",
   "aa_api_url": "https://artificialanalysis.ai/api/v2/language/models/free",

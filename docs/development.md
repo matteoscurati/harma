@@ -31,13 +31,13 @@ cm sync harma          # show what would change
 cm sync harma --write  # write it on branch models/sync-<date>
 ```
 
-Without `cm`, the same file comes from a local checkout of the registry:
+The maintainer import script also uses `cm` from a local controller-models checkout.
 
 ```sh
 node scripts/import-catalog.mjs path_to_controller_models
 ```
 
-The script also reads the path from `HARMA_CONTROLLER_MODELS`. Both produce the same bytes, dated with the registry's `updated` date. The catalog is generated: change models in the registry, not in `data/catalog.json`. Users can refresh scores on their own machine with `harma rank --refresh`, without a new release.
+The script also reads the path from `HARMA_CONTROLLER_MODELS`. Both commands use the same renderer and stop if the destination was generated from a newer registry snapshot. Edit models in the registry before regenerating `data/catalog.json`. Users can refresh scores on their machine with `harma rank --refresh`.
 
 ## Release
 

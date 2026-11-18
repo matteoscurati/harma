@@ -2,10 +2,11 @@
 // From the catalog snapshot, or refreshed from the AA API when a key exists
 // (AA_API_KEY, or the delegation-kit key file). Missing scores stay null and
 // are printed as "sconosciuto"; nothing is interpolated.
-import { readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { readFileSync, mkdirSync, writeFileSync, existsSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
-import { aaIndex, aaCost, userCatalogPath } from './catalog.mjs';
+import { aaIndex, aaCost, aaCachePath } from './catalog.mjs';
 import { EFFORT_ORDER, HarmaError } from './util.mjs';
 
 export function rankRows(catalog, inventoryModels) {
@@ -73,7 +74,7 @@ export function aaKey(env = process.env) {
   return null;
 }
 
-/** Fetch AA and write a refreshed catalog to the user config dir. Returns a change list. */
+/** Fetch AA and cache the figures for this catalog. Returns a change list. */
 export async function refreshFromAA(catalog, { env = process.env, fetchImpl = fetch } = {}) {
   const key = aaKey(env);
   if (!key) {
@@ -98,25 +99,36 @@ export async function refreshFromAA(catalog, { env = process.env, fetchImpl = fe
   const fams = aaFamilies(rows);
   const costs = aaFamilies(rows, aaRowCost);
   const today = new Date().toISOString().slice(0, 10);
-  const next = structuredClone(catalog);
-  delete next.origin;
-  next.aa_api_url = url;
+  const benchmarks = {};
   const changes = [];
-  for (const [id, m] of Object.entries(next.models)) {
-    const fam = m.aa?.slug ? fams[m.aa.slug] : null;
-    if (!fam) { changes.push({ model: id, change: m.aa?.slug ? 'non trovato su AA' : 'senza slug AA' }); continue; }
+  for (const [id, model] of Object.entries(catalog.models)) {
+    const aa = model.aa;
+    const fam = aa?.slug ? fams[aa.slug] : null;
+    if (!fam) {
+      changes.push({ model: id, change: aa?.slug ? 'non trovato su AA' : 'senza slug AA' });
+      if (catalog.origin === 'user-refresh' && aa?.source === 'aa-api') {
+        benchmarks[id] = { index: aa.index, cost_per_task: aa.cost_per_task, date: aa.date };
+      }
+      continue;
+    }
     const index = nonNull(fam);
-    const cost = nonNull(costs[m.aa.slug]);
-    if (!sameScores(index, m.aa.index)) changes.push({ model: id, change: 'indice aggiornato', old: m.aa.index, new: index });
-    m.aa.index = Object.keys(index).length ? index : null;
-    if (Object.keys(cost).length) m.aa.cost_per_task = cost;
-    m.aa.date = today;
-    m.aa.source = 'aa-api';
+    const cost = nonNull(costs[aa.slug]);
+    if (!sameScores(index, aa.index)) changes.push({ model: id, change: 'indice aggiornato', old: aa.index, new: index });
+    benchmarks[id] = {
+      index: Object.keys(index).length ? index : null,
+      cost_per_task: Object.keys(cost).length ? cost : aa.cost_per_task,
+      date: today,
+    };
   }
-  next.generated_at = today;
-  next.source = 'Artificial Analysis API (refresh harma) su catalogo ' + (catalog.registry_updated ?? '');
-  const dest = userCatalogPath(env);
+  const snapshot = { catalog_fingerprint: catalog.catalog_fingerprint, generated_at: today, benchmarks };
+  const dest = aaCachePath(env);
+  const tmp = `${dest}.${randomUUID()}.tmp`;
   mkdirSync(dirname(dest), { recursive: true });
-  writeFileSync(dest, JSON.stringify(next, null, 2) + '\n');
+  try {
+    writeFileSync(tmp, JSON.stringify(snapshot, null, 2) + '\n');
+    renameSync(tmp, dest);
+  } finally {
+    rmSync(tmp, { force: true });
+  }
   return { dest, changes };
 }

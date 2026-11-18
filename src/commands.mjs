@@ -72,7 +72,7 @@ export async function cmdModels(flags, opts = {}) {
   const c = ctx(opts);
   const cfg = loadConfig(c.root);
   const inv = await inventory({ catalog: c.catalog, env: c.env, config: cfg });
-  if (hasProject(c.root)) writeCache(c.root, 'inventory', inv);
+  if (hasProject(c.root)) writeCache(c.root, 'inventory', { ...inv, catalog_fingerprint: c.catalog.catalog_fingerprint });
   emit(c, flags, inv, () => [
     'CLI di agenti',
     table(inv.clis, ['harness', 'state', 'version', 'billing', 'effort_via']),
@@ -86,7 +86,8 @@ export async function cmdModels(flags, opts = {}) {
 
 async function currentInventory(c, cfg, { fresh = false } = {}) {
   const cached = !fresh && hasProject(c.root) ? readCache(c.root, 'inventory') : null;
-  return cached ?? inventory({ catalog: c.catalog, env: c.env, config: cfg, versions: false });
+  if (cached?.catalog_fingerprint === c.catalog.catalog_fingerprint) return cached;
+  return inventory({ catalog: c.catalog, env: c.env, config: cfg, versions: false });
 }
 
 // 3 ─ credits ──────────────────────────────────────────────────────────────
