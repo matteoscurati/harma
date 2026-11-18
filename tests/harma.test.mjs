@@ -180,7 +180,44 @@ test('dispatch --yes on herdr opens one tab per agent, records the session and s
   assert.equal(h.agents.find((a) => a.name === 'planner').last_prompt, 'plan it');
   assert.deepEqual(h.agents.find((a) => a.name === 'builder').args, ['-m', 'gpt-6-astra', '-c', 'model_reasoning_effort="high"']);
   assert.equal(loadConfig(sb.project).herdr.workspace_id, 'w1');
+  // The new workspace's root tab hosts the first agent: no empty shell tab left behind.
+  assert.equal(planner.target.pane, 'w1:p0');
+  assert.deepEqual(h.labels, { 'w1:t0': 'planner', 'w1:t1': 'builder' });
   assert.equal(await run(sb, ['dispatch', '--name', 'planner', '--model', 'claude:claude-opus-5-5', '--yes']), 1); // name in use
+});
+
+test('herdr: a first agent in another cwd or with its own env gets a new tab, and the empty root tab is closed', async () => {
+  const sb = sandbox({ bins: ['herdr', 'codexbar', 'claude', 'codex', 'kimi'] });
+  await run(sb, ['init', '--orchestrator', 'claude:claude-opus-5-5', '--effort', 'high', '--backend', 'herdr']);
+  assert.equal(await run(sb, ['dispatch', '--name', 'kimi1', '--model', 'kimi:kimi-k3.1-pro', '--effort', 'max', '--yes']), 0);
+  const h = sb.state().herdr;
+  const create = h.calls.find((c) => c[0] === 'tab' && c[1] === 'create');
+  assert.ok(create.includes('KIMI_MODEL_THINKING_EFFORT=max'));
+  assert.deepEqual(Object.keys(h.tabs), ['w1:t1']); // root tab w1:t0 closed
+  assert.deepEqual(h.open, ['w1']);
+});
+
+test('herdr: closing the last agent closes the workspace; the next dispatch makes a new one', async () => {
+  const sb = sandbox();
+  await run(sb, ['init', '--orchestrator', 'claude:claude-opus-5-5', '--effort', 'high', '--backend', 'herdr']);
+  await run(sb, ['dispatch', '--name', 'done1', '--model', 'claude:claude-sonnet-5-5', '--effort', 'high', '--prompt', 'x', '--yes']);
+  await run(sb, ['cleanup']);
+  assert.deepEqual(sb.state().herdr.open, []);
+  assert.equal(await run(sb, ['dispatch', '--name', 'next1', '--model', 'claude:claude-sonnet-5-5', '--effort', 'high', '--yes']), 0);
+  assert.equal(loadConfig(sb.project).herdr.workspace_id, 'w2');
+  assert.equal(agents(sb).find((a) => a.name === 'next1').target.pane, 'w2:p0');
+});
+
+test('herdr read falls back to the visible screen while a full-screen agent is working', async () => {
+  const sb = sandbox();
+  await run(sb, ['init', '--orchestrator', 'claude:claude-opus-5-5', '--effort', 'high', '--backend', 'herdr']);
+  await run(sb, ['dispatch', '--name', 'planner', '--model', 'claude:claude-opus-5-5', '--effort', 'high', '--yes']);
+  sb.clear();
+  assert.equal(await run(sb, ['read', 'planner'], { env: { ...sb.env, FAKE_READ_NOT_IDLE: '1' } }), 0);
+  assert.match(sb.output(), /output of planner \(visible\)/);
+  sb.clear();
+  assert.equal(await run(sb, ['read', 'planner']), 0);
+  assert.match(sb.output(), /output of planner \(recent-unwrapped\)/);
 });
 
 test('auto-within-budget dispatches only when the provider has credit', async () => {
@@ -246,8 +283,11 @@ test('cleanup --workspace closes harma\'s own workspace only when no agent is op
   await run(sb, ['dispatch', '--name', 'busy1', '--model', 'codex:gpt-6-astra', '--effort', 'high', '--prompt', 'y', '--yes'], { env: { ...sb.env, FAKE_AFTER_PROMPT: 'working' } });
   await run(sb, ['cleanup', '--workspace']);
   assert.equal(sb.state().herdr.closedWorkspaces, undefined);
-  await run(sb, ['cleanup', '--workspace', '--force']);
-  assert.deepEqual(sb.state().herdr.closedWorkspaces, ['w1']);
+  sb.clear();
+  await run(sb, ['cleanup', '--workspace', '--force', '--json']);
+  // herdr already closed the workspace with its last tab: that counts as closed.
+  assert.deepEqual(sb.state().herdr.open, []);
+  assert.equal(JSON.parse(sb.output()).report.find((r) => r.agente === '(workspace)').azione, 'chiuso');
   assert.equal(loadConfig(sb.project).herdr.workspace_id, undefined);
 });
 

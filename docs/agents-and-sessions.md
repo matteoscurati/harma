@@ -6,7 +6,7 @@ This page explains where harma runs agents, how it keeps each agent's session ID
 
 harma runs each agent in a terminal managed by one of two backends. With `--backend auto` (the default) it uses herdr when herdr is running, otherwise herdr-core. harma never starts, stops or restarts the backend's server.
 
-- **[herdr](https://herdr.dev)**: harma creates one workspace per project, labelled `harma:<project>`, and one tab per agent. Closing an agent closes its tab. herdr's agent detection reports each agent's state and session ID.
+- **[herdr](https://herdr.dev)**: harma creates one workspace per project, labelled `harma:<project>`, and one tab per agent. The first agent uses the tab herdr creates with the workspace, so no empty shell tab is left. Closing an agent closes its tab, and herdr closes the workspace with its last tab; the next agent opens a new one. herdr's agent detection reports each agent's state and session ID. While a full-screen agent such as Claude Code is working, `harma read` shows its visible screen, because herdr scrolls back through that agent's history only when it is idle.
 - **[herdr-core](https://github.com/herdrdev/herdr-core) (`hc`)**: harma starts headless terminals labelled `harma.project` and `harma.agent`, with `--outlive-parent` so they survive the orchestrator's session. State comes from the terminal's status reports. Open one with `hc attach agent_name`.
 
 ## Session IDs

@@ -17,26 +17,42 @@ const ok = (result) => { save(); console.log(JSON.stringify({ id: 'cli', result 
 const fail = (code, message) => { save(); console.error(JSON.stringify({ error: { code, message } })); process.exit(1); };
 const [g, c] = a;
 if (g === 'status') { save(); console.log('server:\\n  status: running\\n  version: 0.9.5'); process.exit(0); }
-if (g === 'workspace' && c === 'get') return (a[2] === 'w' + h.ws ? ok({ workspace: { workspace_id: a[2] } }) : fail('not_found', 'no ws'));
-if (g === 'workspace' && c === 'create') { h.ws++; return ok({ workspace: { workspace_id: 'w' + h.ws }, tab: { tab_id: 'w' + h.ws + ':t0' }, root_pane: { pane_id: 'w' + h.ws + ':p0' } }); }
-if (g === 'workspace' && c === 'close') { h.closedWorkspaces = [...(h.closedWorkspaces ?? []), a[2]]; return ok({ closed: a[2] }); }
-if (g === 'tab' && c === 'create') { h.tab++; const ws = a[a.indexOf('--workspace') + 1]; return ok({ tab: { tab_id: ws + ':t' + h.tab }, root_pane: { pane_id: ws + ':p' + h.tab } }); }
+// Like herdr: a workspace starts with a root tab; closing its last tab closes it; ids are never reused.
+h.tabs ??= {}; h.open ??= [];
+const wsOf = (tab) => h.tabs[tab];
+const closeTab = (tab) => {
+  const ws = wsOf(tab); delete h.tabs[tab];
+  h.agents = h.agents.filter((x) => x.tab_id !== tab);
+  if (ws && !Object.values(h.tabs).includes(ws)) h.open = h.open.filter((w) => w !== ws);
+};
+if (g === 'workspace' && c === 'get') return (h.open.includes(a[2]) ? ok({ workspace: { workspace_id: a[2] } }) : fail('workspace_not_found', 'workspace ' + a[2] + ' not found'));
+if (g === 'workspace' && c === 'create') { h.ws++; const w = 'w' + h.ws; h.open.push(w); h.tabs[w + ':t0'] = w; h.labels = { ...h.labels, [w + ':t0']: '1' }; return ok({ workspace: { workspace_id: w }, tab: { tab_id: w + ':t0' }, root_pane: { pane_id: w + ':p0' } }); }
+if (g === 'workspace' && c === 'close') {
+  if (!h.open.includes(a[2])) return fail('workspace_not_found', 'workspace ' + a[2] + ' not found');
+  h.open = h.open.filter((w) => w !== a[2]); for (const t of Object.keys(h.tabs)) if (h.tabs[t] === a[2]) delete h.tabs[t];
+  h.closedWorkspaces = [...(h.closedWorkspaces ?? []), a[2]]; return ok({ closed: a[2] });
+}
+if (g === 'tab' && c === 'create') { h.tab++; const ws = a[a.indexOf('--workspace') + 1]; const t = ws + ':t' + h.tab; h.tabs[t] = ws; h.labels = { ...h.labels, [t]: a[a.indexOf('--label') + 1] }; return ok({ tab: { tab_id: t }, root_pane: { pane_id: ws + ':p' + h.tab } }); }
+if (g === 'tab' && c === 'rename') { if (!wsOf(a[2])) return fail('tab_not_found', 'no tab'); h.labels[a[2]] = a[3]; return ok({ tab: { tab_id: a[2], label: a[3] } }); }
+if (g === 'tab' && c === 'focus') { h.focused = a[2]; return ok({ tab: { tab_id: a[2] } }); }
 if (g === 'pane' && c === 'run') return ok({ queued: true });
-if (g === 'tab' && c === 'close') { h.agents = h.agents.filter((x) => x.tab_id !== a[2]); return ok({ closed: a[2] }); }
+if (g === 'tab' && c === 'close') { closeTab(a[2]); return ok({ closed: a[2] }); }
 if (g === 'agent' && c === 'start') {
   const pane = a[a.indexOf('--pane') + 1];
   const kind = a[a.indexOf('--kind') + 1];
+  h.starts = (h.starts ?? 0) + 1;
   const dd = a.indexOf('--');
   const args = dd >= 0 ? a.slice(dd + 1) : [];
   const si = args.indexOf('--session-id'); const ri = args.indexOf('--resume');
-  const sid = si >= 0 ? args[si + 1] : ri >= 0 ? args[ri + 1] : (kind === 'codex' ? 'codex-' + h.tab : null);
+  const sid = si >= 0 ? args[si + 1] : ri >= 0 ? args[ri + 1] : (kind === 'codex' ? 'codex-' + h.starts : null);
   h.agents.push({ name: a[2], agent: kind, pane_id: pane, tab_id: pane.replace(':p', ':t'), agent_status: 'idle', cwd: '/x', agent_session: sid ? { value: sid } : null, args });
   return ok({ agent: a[2] });
 }
 if (g === 'agent' && c === 'list') { save(); console.log(JSON.stringify({ result: { agents: h.agents.map(({ args, ...x }) => x) } })); process.exit(0); }
 if (g === 'agent' && c === 'prompt' && process.env.FAKE_PROMPT_BLOCKED) return fail('agent_blocked', 'agent ' + a[2] + ' is blocked and requires interactive input');
 if (g === 'agent' && c === 'prompt') { const ag = h.agents.find((x) => x.name === a[2]); if (!ag) return fail('not_found', 'no agent'); ag.agent_status = process.env.FAKE_AFTER_PROMPT || 'done'; ag.last_prompt = a[3]; return ok({ submitted: true }); }
-if (g === 'agent' && c === 'read') return ok({ text: 'output of ' + a[2] });
+if (g === 'agent' && c === 'read' && process.env.FAKE_READ_NOT_IDLE && a.includes('recent-unwrapped')) return fail('agent_not_idle', 'agent ' + a[2] + ' is working');
+if (g === 'agent' && c === 'read') { save(); console.log('output of ' + a[2] + ' (' + a[a.indexOf('--source') + 1] + ')'); process.exit(0); }
 fail('unknown', 'fake herdr: ' + a.join(' '));
 `;
 

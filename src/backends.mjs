@@ -55,30 +55,55 @@ export class HerdrBackend {
     return { ok: running, version, detail: running ? 'server attivo' : 'server herdr non attivo (avvia herdr)' };
   }
 
-  async ensureWorkspace(root, project) {
+  /**
+   * The project workspace. A new one comes with a first tab and root pane
+   * (herdr docs: use that pane for the first process), returned as `root` so
+   * the caller fills it instead of leaving an empty shell tab behind.
+   */
+  async ensureWorkspace(root, project, { focus = false } = {}) {
     const known = this.config.herdr?.workspace_id;
     if (known) {
       const got = await this.exec(['workspace', 'get', known]);
-      if (got.ok) return { id: known, created: false };
+      if (got.ok) return { id: known, created: false, root: null };
     }
-    const res = await this.exec(['workspace', 'create', '--cwd', root, '--label', `harma:${project}`, '--no-focus']);
+    const res = await this.exec(['workspace', 'create', '--cwd', root, '--label', `harma:${project}`, focus ? '--focus' : '--no-focus']);
     const data = okJson(res, 'herdr workspace create');
     const id = data?.result?.workspace?.workspace_id ?? data?.result?.workspace?.id;
     if (!id) throw new HarmaError('herdr workspace create: risposta senza workspace_id');
-    return { id, created: true };
+    const tabId = data?.result?.tab?.tab_id;
+    const paneId = data?.result?.root_pane?.pane_id;
+    return { id, created: true, root: tabId && paneId ? { tabId, paneId } : null };
+  }
+
+  /**
+   * A tab for one process. In a workspace harma just created, the root tab is
+   * reused (renamed) when it fits: same cwd and no extra env, since `--env`
+   * only applies when a tab is created. Otherwise a new tab is created and the
+   * fresh, empty root tab is closed, so no stray shell tab stays behind.
+   */
+  async placeTab(ws, { cwd, label, env = {}, focus = false }) {
+    const fresh = ws.created ? ws.root : null;
+    if (fresh && cwd === ws.cwd && !Object.keys(env).length) {
+      okJson(await this.exec(['tab', 'rename', fresh.tabId, label]), 'herdr tab rename');
+      if (focus) await this.exec(['tab', 'focus', fresh.tabId]);
+      return { tabId: fresh.tabId, paneId: fresh.paneId };
+    }
+    const tabArgs = ['tab', 'create', '--workspace', ws.id, '--cwd', cwd, '--label', label, focus ? '--focus' : '--no-focus'];
+    for (const [k, v] of Object.entries(env)) tabArgs.push('--env', `${k}=${v}`);
+    const tab = okJson(await this.exec(tabArgs), 'herdr tab create');
+    const tabId = tab?.result?.tab?.tab_id;
+    const paneId = tab?.result?.root_pane?.pane_id;
+    if (!tabId || !paneId) throw new HarmaError('herdr tab create: risposta senza tab_id/pane_id');
+    if (fresh) await this.exec(['tab', 'close', fresh.tabId]);
+    return { tabId, paneId };
   }
 
   async start({ name, cwd, argv, env = {}, harness, root, project }) {
     checkAgentName(name);
     const kind = meta(harness).herdrKind;
     if (!kind) throw new HarmaError(`herdr non riconosce ${harness} come agente`, { hint: 'Usa --backend hc per questa CLI' });
-    const ws = await this.ensureWorkspace(root, project);
-    const tabArgs = ['tab', 'create', '--workspace', ws.id, '--cwd', cwd, '--label', name, '--no-focus'];
-    for (const [k, v] of Object.entries(env)) tabArgs.push('--env', `${k}=${v}`);
-    const tab = okJson(await this.exec(tabArgs), 'herdr tab create');
-    const tabId = tab?.result?.tab?.tab_id;
-    const paneId = tab?.result?.root_pane?.pane_id;
-    if (!tabId || !paneId) throw new HarmaError('herdr tab create: risposta senza tab_id/pane_id');
+    const ws = { ...await this.ensureWorkspace(root, project), cwd: root };
+    const { tabId, paneId } = await this.placeTab(ws, { cwd, label: name, env });
     const startArgs = ['agent', 'start', name, '--kind', kind, '--pane', paneId, '--timeout', '60000'];
     if (argv.length > 1) startArgs.push('--', ...argv.slice(1));
     const started = await this.exec(startArgs, { timeout: 90_000 });
@@ -115,10 +140,16 @@ export class HerdrBackend {
   }
 
   async read(target, lines = 120) {
-    const res = await this.exec(['agent', 'read', target, '--source', 'recent-unwrapped', '--lines', String(lines)]);
+    let res = await this.exec(['agent', 'read', target, '--source', 'recent-unwrapped', '--lines', String(lines)]);
+    // Full-screen agents (Claude Code, OpenCode) keep history in the alternate
+    // screen: herdr scrolls it only while idle and answers agent_not_idle
+    // otherwise. The visible screen is still readable.
+    if (!res.ok && parseJson(res.stderr)?.error?.code === 'agent_not_idle') {
+      res = await this.exec(['agent', 'read', target, '--source', 'visible', '--lines', String(lines)]);
+    }
     const data = parseJson(res.stdout);
     if (!res.ok) okJson(res, 'herdr agent read');
-    return data?.result?.text ?? data?.result?.content ?? res.stdout;
+    return data?.result?.text ?? data?.result?.read?.text ?? data?.result?.content ?? res.stdout;
   }
 
   async close({ tab, target }) {
@@ -129,11 +160,8 @@ export class HerdrBackend {
 
   /** A focused tab in the project workspace running a shell command (used for the select TUI). */
   async openTab({ root, project, label, command }) {
-    const ws = await this.ensureWorkspace(root, project);
-    const tab = okJson(await this.exec(['tab', 'create', '--workspace', ws.id, '--cwd', root, '--label', label, '--focus']), 'herdr tab create');
-    const tabId = tab?.result?.tab?.tab_id;
-    const paneId = tab?.result?.root_pane?.pane_id;
-    if (!tabId || !paneId) throw new HarmaError('herdr tab create: risposta senza tab_id/pane_id');
+    const ws = { ...await this.ensureWorkspace(root, project, { focus: true }), cwd: root };
+    const { tabId, paneId } = await this.placeTab(ws, { cwd: root, label, focus: true });
     okJson(await this.exec(['pane', 'run', paneId, command]), 'herdr pane run');
     return { tab: tabId, pane: paneId, workspace: ws.id, workspaceCreated: ws.created };
   }
@@ -141,6 +169,8 @@ export class HerdrBackend {
   /** Only for the workspace harma created for this project (config.herdr.workspace_id). */
   async closeWorkspace(id) {
     const res = await this.exec(['workspace', 'close', id]);
+    // herdr closes a workspace with its last tab: already gone counts as closed.
+    if (!res.ok && parseJson(res.stderr)?.error?.code === 'workspace_not_found') return { ok: true, detail: `workspace ${id} già chiuso` };
     return { ok: res.ok, detail: res.ok ? `workspace ${id} chiuso` : res.stderr.trim() };
   }
 }
