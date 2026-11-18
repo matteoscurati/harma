@@ -108,12 +108,20 @@ test('AA refresh maps "(Max)" variants onto the family and writes the user catal
   ]);
   assert.deepEqual(fams['claude-opus-5-5'], { max: 60, low: 35 });
   const sb = sandbox();
-  const fetchImpl = async () => ({ ok: true, json: async () => ({ data: [{ name: 'Claude Opus 5.5 (Max)', slug: 'claude-opus-5-5-max', evaluations: { artificial_analysis_intelligence_index: 61 } }] }) });
-  const res = await refreshFromAA(catalog, { env: { ...sb.env, AA_API_KEY: 'k' }, fetchImpl });
+  const pages = {
+    1: { pagination: { has_more: true }, data: [{ name: 'Claude Opus 5.5 (Max)', slug: 'claude-opus-5-5-max', evaluations: { artificial_analysis_intelligence_index: 61 }, artificial_analysis_intelligence_index_cost: { cost_per_task: { total_cost: 4.2 } } }] },
+    2: { pagination: { has_more: false }, data: [{ name: 'Qwen4 Max', slug: 'qwen4-max', evaluations: { artificial_analysis_intelligence_index: 44 } }] },
+  };
+  const urls = [];
+  const fetchImpl = async (url) => { urls.push(url); return { ok: true, json: async () => pages[new URL(url).searchParams.get('page')] }; };
+  const res = await refreshFromAA({ ...catalog, aa_api_url: 'https://artificialanalysis.ai/api/v2/data/llms/models' }, { env: { ...sb.env, AA_API_KEY: 'k' }, fetchImpl });
   assert.ok(existsSync(res.dest));
+  assert.deepEqual(urls.map((u) => u.split('?')[0]), Array(2).fill('https://artificialanalysis.ai/api/v2/language/models/free'));
   const fresh = loadCatalog({ env: sb.env });
   assert.equal(fresh.origin, 'user-refresh');
   assert.equal(fresh.models['claude-opus-5-5'].aa.index.max, 61);
+  assert.equal(fresh.models['claude-opus-5-5'].aa.cost_per_task.max, 4.2);
+  assert.equal(fresh.models['qwen4-max'].aa.index.default, 44);
   await assert.rejects(refreshFromAA(catalog, { env: sb.env }), /chiave/);
 });
 

@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-08",
-  "registry_updated": "2026-10-28",
+  "generated_at": "2026-11-18",
+  "registry_updated": "2026-11-18",
   "source": "controller-models registry",
   "attribution": "Intelligence Index and cost per task: Artificial Analysis (https://artificialanalysis.ai/)",
-  "aa_api_url": "https://artificialanalysis.ai/api/v2/data/llms/models",
+  "aa_api_url": "https://artificialanalysis.ai/api/v2/language/models/free",
   "models": {
     "claude-fable-5-1": {
       "provider": "anthropic",
@@ -26,21 +26,21 @@
       "aa": {
         "slug": "claude-fable-5-1",
         "index": {
-          "high": 47,
-          "low": 38.5,
-          "max": 49,
-          "medium": 43,
-          "xhigh": 49.7
+          "high": 47.2,
+          "low": 38.7,
+          "max": 49.2,
+          "medium": 43.2,
+          "xhigh": 50
         },
         "cost_per_task": {
-          "high": 7.56,
-          "low": 4.49,
-          "max": 13.04,
-          "medium": 5.58,
-          "xhigh": 10.89
+          "high": 7.54,
+          "low": 4.4711,
+          "max": 12.994,
+          "medium": 5.5643,
+          "xhigh": 10.8475
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "claude-opus-5-5": {
@@ -63,21 +63,21 @@
       "aa": {
         "slug": "claude-opus-5-5",
         "index": {
-          "high": 51.7,
-          "low": 34.5,
-          "max": 58.4,
-          "medium": 48.1,
-          "xhigh": 57
+          "high": 51.8,
+          "low": 34.8,
+          "max": 59.1,
+          "medium": 48.2,
+          "xhigh": 57.4
         },
         "cost_per_task": {
-          "high": 3.46,
-          "low": 0.98,
-          "max": 10.04,
-          "medium": 2.45,
-          "xhigh": 6.05
+          "high": 3.4647,
+          "low": 0.9755,
+          "max": 10.0364,
+          "medium": 2.4511,
+          "xhigh": 6.0472
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "claude-sonnet-5-5": {
@@ -100,21 +100,21 @@
       "aa": {
         "slug": "claude-sonnet-5-5",
         "index": {
-          "high": 41.1,
-          "low": 25.3,
-          "max": 54.2,
-          "medium": 30.3,
-          "xhigh": 49.6
+          "high": 41.5,
+          "low": 25.6,
+          "max": 54.5,
+          "medium": 30.8,
+          "xhigh": 49.9
         },
         "cost_per_task": {
-          "high": 1.64,
-          "low": 0.51,
-          "max": 10.02,
-          "medium": 0.78,
-          "xhigh": 4.09
+          "high": 1.6361,
+          "low": 0.5113,
+          "max": 10.0206,
+          "medium": 0.7807,
+          "xhigh": 4.092
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "claude-haiku-5-5": {
@@ -137,17 +137,95 @@
       "aa": {
         "slug": "claude-haiku-5-5",
         "index": {
-          "high": 29.6,
+          "high": 29.9,
           "low": 18.6,
-          "max": 36.2,
+          "max": 36.5,
           "medium": 24.6,
-          "xhigh": 34.3
+          "xhigh": 34.6
         },
         "cost_per_task": {
-          "max": 0.41
+          "high": 0.1586,
+          "low": 0.0438,
+          "max": 0.411,
+          "medium": 0.0918,
+          "xhigh": 0.2484
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
+      }
+    },
+    "gpt-6.2-astra": {
+      "provider": "openai",
+      "display_name": "GPT-6.2 Astra",
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "effort_default": null,
+      "pricing": {
+        "input": 8,
+        "output": 40,
+        "source": "openai-pricing",
+        "verified_on": "2026-11-18"
+      },
+      "aa": {
+        "slug": "gpt-6-2-astra",
+        "index": {
+          "high": 60.1,
+          "low": 45.7,
+          "max": 62.1,
+          "medium": 57,
+          "xhigh": 61.6
+        },
+        "cost_per_task": {
+          "high": 2.0739,
+          "low": 0.6617,
+          "max": 3.9979,
+          "medium": 1.6177,
+          "xhigh": 2.5211
+        },
+        "date": "2026-11-18",
+        "index_version": "5.0.1"
+      }
+    },
+    "gpt-6.2-sol": {
+      "provider": "openai",
+      "display_name": "GPT-6.2 Sol",
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "effort_default": null,
+      "pricing": {
+        "input": 2,
+        "output": 10,
+        "source": "openai-pricing",
+        "verified_on": "2026-11-18"
+      },
+      "aa": {
+        "slug": "gpt-6-2-sol",
+        "index": {
+          "high": 54.9,
+          "low": 40.6,
+          "max": 57.3,
+          "medium": 52.7,
+          "xhigh": 55.7
+        },
+        "cost_per_task": {
+          "high": 0.5636,
+          "low": 0.1836,
+          "max": 1.0144,
+          "medium": 0.4061,
+          "xhigh": 0.648
+        },
+        "date": "2026-11-18",
+        "index_version": "5.0.1"
       }
     },
     "gpt-6-astra": {
@@ -171,20 +249,20 @@
         "slug": "gpt-6-astra",
         "index": {
           "high": 54.8,
-          "low": 43,
+          "low": 43.3,
           "max": 56.9,
-          "medium": 51.5,
+          "medium": 51.6,
           "xhigh": 55.3
         },
         "cost_per_task": {
-          "high": 3.24,
-          "low": 1.42,
-          "max": 6.24,
-          "medium": 2.73,
-          "xhigh": 3.66
+          "high": 3.2386,
+          "low": 1.4237,
+          "max": 6.2447,
+          "medium": 2.7324,
+          "xhigh": 3.6589
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "gpt-6.1-sol": {
@@ -207,21 +285,21 @@
       "aa": {
         "slug": "gpt-6-1-sol",
         "index": {
-          "high": 50.2,
-          "low": 34.5,
-          "max": 54.5,
-          "medium": 46.1,
-          "xhigh": 52.3
+          "high": 50.3,
+          "low": 34.8,
+          "max": 54.6,
+          "medium": 46.3,
+          "xhigh": 52.5
         },
         "cost_per_task": {
-          "high": 0.59,
-          "low": 0.16,
-          "max": 1.27,
-          "medium": 0.36,
-          "xhigh": 0.76
+          "high": 0.591,
+          "low": 0.1615,
+          "max": 1.2721,
+          "medium": 0.3594,
+          "xhigh": 0.764
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "gpt-6.1-terra": {
@@ -245,22 +323,23 @@
       "aa": {
         "slug": "gpt-6-1-terra",
         "index": {
-          "high": 42.3,
-          "low": 29.2,
-          "max": 51,
-          "medium": 38.1,
-          "non-reasoning": 30.4,
-          "xhigh": 45
+          "high": 42.4,
+          "low": 29.4,
+          "max": 51.3,
+          "medium": 38.2,
+          "non-reasoning": 30.5,
+          "xhigh": 45.3
         },
         "cost_per_task": {
-          "high": 0.26,
-          "low": 0.07,
-          "max": 0.96,
-          "medium": 0.17,
-          "xhigh": 0.4
+          "high": 0.2593,
+          "low": 0.0713,
+          "max": 0.9611,
+          "medium": 0.1688,
+          "non-reasoning": 0.2259,
+          "xhigh": 0.4007
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "gpt-6-luna": {
@@ -285,16 +364,21 @@
         "index": {
           "high": 21.4,
           "low": 9.7,
-          "max": 27.8,
-          "medium": 18.3,
+          "max": 27.9,
+          "medium": 18.5,
           "non-reasoning": 9.4,
-          "xhigh": 23.3
+          "xhigh": 23.5
         },
         "cost_per_task": {
-          "max": 0.15
+          "high": 0.0729,
+          "low": 0.0051,
+          "max": 0.152,
+          "medium": 0.0422,
+          "non-reasoning": 0.0714,
+          "xhigh": 0.1041
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "gemini-4-argon": {
@@ -315,13 +399,15 @@
       "aa": {
         "slug": "gemini-4-argon",
         "index": {
-          "high": 50.4
+          "high": 50.4,
+          "medium": 47.6
         },
         "cost_per_task": {
-          "high": 7.68
+          "high": 4.9733,
+          "medium": 4.3146
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "gemini-3.8-flash": {
@@ -342,16 +428,16 @@
       "aa": {
         "slug": "gemini-3-8-flash",
         "index": {
-          "high": 30.5,
-          "low": 22.3,
-          "medium": 30
+          "high": 30.8,
+          "low": 22.5,
+          "medium": 30.1
         },
         "cost_per_task": {
-          "high": 7.77,
-          "medium": 6.26
+          "high": 7.766,
+          "medium": 6.2586
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "grok-4.7": {
@@ -373,15 +459,17 @@
       "aa": {
         "slug": "grok-4-7",
         "index": {
-          "high": 35,
-          "low": 30.9,
-          "xhigh": 34.3
+          "high": 35.2,
+          "low": 31.1,
+          "xhigh": 35.5
         },
         "cost_per_task": {
-          "high": 6.18
+          "high": 6.1836,
+          "low": 2.9222,
+          "xhigh": 7.7715
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "kimi-k3.1-pro": {
@@ -402,13 +490,13 @@
       "aa": {
         "slug": "kimi-k3-1-pro",
         "index": {
-          "default": 46
+          "default": 46.5
         },
         "cost_per_task": {
-          "default": 3.68
+          "default": 3.6812
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "qwen3.8-max": {
@@ -432,13 +520,13 @@
       "aa": {
         "slug": "qwen3-8-max",
         "index": {
-          "default": 33.6
+          "default": 33.7
         },
         "cost_per_task": {
-          "default": 10.02
+          "default": 10.0239
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "qwen3.8-flash": {
@@ -456,8 +544,8 @@
         "slug": null,
         "index": null,
         "cost_per_task": null,
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "glm-5.3": {
@@ -478,10 +566,11 @@
           "max": 31.7
         },
         "cost_per_task": {
-          "max": 5.01
+          "low": 1.5749,
+          "max": 5.0093
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "glm-5.3-flash": {
@@ -497,10 +586,14 @@
       },
       "aa": {
         "slug": "glm-5-3-flash",
-        "index": null,
-        "cost_per_task": null,
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "index": {
+          "default": 27.8
+        },
+        "cost_per_task": {
+          "default": 0.5833
+        },
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "deepseek-flash": {
@@ -521,13 +614,17 @@
       "aa": {
         "slug": "deepseek-v4-1-flash-1017",
         "index": {
-          "max": 32.5
+          "high": 28.6,
+          "max": 32.6,
+          "non-reasoning": 18.5
         },
         "cost_per_task": {
-          "max": 0.6
+          "high": 0.4562,
+          "max": 0.6021,
+          "non-reasoning": 0.4254
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "deepseek-v4-pro": {
@@ -548,13 +645,17 @@
       "aa": {
         "slug": "deepseek-v4-pro",
         "index": {
-          "max": 23.1
+          "high": 20.8,
+          "max": 23.1,
+          "non-reasoning": 12.6
         },
         "cost_per_task": {
-          "max": 1.77
+          "high": 0.8485,
+          "max": 1.7691,
+          "non-reasoning": 0.977
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "minimax-m3.1-flash": {
@@ -577,13 +678,13 @@
       "aa": {
         "slug": "minimax-m3-1-flash",
         "index": {
-          "default": 28.9
+          "default": 29.1
         },
         "cost_per_task": {
-          "default": 0.49
+          "default": 0.491
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "muse-wonder-1.0": {
@@ -607,13 +708,15 @@
       "aa": {
         "slug": "muse-wonder",
         "index": {
-          "max": 43.3
+          "high": 40.5,
+          "max": 43.6
         },
         "cost_per_task": {
-          "max": 6.95
+          "high": 4.5605,
+          "max": 6.952
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "muse-spark-1.3": {
@@ -637,13 +740,13 @@
       "aa": {
         "slug": "muse-spark-1-3",
         "index": {
-          "max": 36.4
+          "max": 36.6
         },
         "cost_per_task": {
-          "max": 2.39
+          "max": 2.3858
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "muse-spark-1.3-contributor": {
@@ -667,8 +770,8 @@
         "slug": null,
         "index": null,
         "cost_per_task": null,
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "muse-wonder-full-1.0": {
@@ -680,11 +783,11 @@
       "aa": {
         "slug": "muse-wonder-full",
         "index": {
-          "max": 49.7
+          "max": 50.1
         },
         "cost_per_task": null,
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "mistral-large-4": {
@@ -701,13 +804,15 @@
       "aa": {
         "slug": "mistral-large-4",
         "index": {
-          "default": 25.3
+          "high": 26.1,
+          "medium": 23.1
         },
         "cost_per_task": {
-          "default": 5.54
+          "high": 2.0617,
+          "medium": 1.4121
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "mistral-medium-3.5": {
@@ -723,10 +828,14 @@
       },
       "aa": {
         "slug": "mistral-medium-3-5",
-        "index": null,
-        "cost_per_task": null,
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "index": {
+          "default": 4.6
+        },
+        "cost_per_task": {
+          "default": 1.0391
+        },
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "mistral-small-2603": {
@@ -744,26 +853,137 @@
         "slug": null,
         "index": null,
         "cost_per_task": null,
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     },
     "gemini-4-carbon": {
       "provider": "google",
       "display_name": "Gemini 4 Carbon",
-      "efforts": [],
-      "effort_default": null,
-      "pricing": null,
+      "efforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "effort_default": "medium",
+      "pricing": {
+        "input": 4,
+        "output": 20,
+        "source": "google-carbon-pricing",
+        "verified_on": "2026-11-10"
+      },
       "aa": {
         "slug": "gemini-4-carbon",
         "index": {
-          "high": 59.4
+          "high": 60,
+          "low": 54.2,
+          "medium": 58.3
         },
         "cost_per_task": {
-          "high": 7.76
+          "high": 5.4848,
+          "low": 5.2214,
+          "medium": 4.6777
         },
-        "date": "2026-10-28",
-        "index_version": "5.0"
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
+      }
+    },
+    "claude-fable-5-2": {
+      "provider": "anthropic",
+      "display_name": "Claude Fable 5.2",
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "effort_default": "high",
+      "pricing": {
+        "input": 8,
+        "output": 40,
+        "source": "claude-fable-52-pricing",
+        "verified_on": "2026-11-10"
+      },
+      "aa": {
+        "slug": "claude-fable-5-2",
+        "index": {
+          "high": 61.8,
+          "low": 53.9,
+          "max": 64.6,
+          "medium": 56.4,
+          "xhigh": 62.2
+        },
+        "cost_per_task": {
+          "high": 9.0784,
+          "low": 3.0972,
+          "max": 26.5386,
+          "medium": 3.8026,
+          "xhigh": 14.8286
+        },
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
+      }
+    },
+    "gemini-4-hydrogen": {
+      "provider": "google",
+      "display_name": "Gemini 4 Hydrogen",
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "effort_default": "high",
+      "pricing": {
+        "input": 1.5,
+        "output": 7.5,
+        "source": "google-hydrogen-pricing",
+        "verified_on": "2026-11-13"
+      },
+      "aa": {
+        "slug": "gemini-4-hydrogen",
+        "index": {
+          "high": 50.8,
+          "low": 26.9,
+          "medium": 41.2,
+          "xhigh": 53.9
+        },
+        "cost_per_task": {
+          "high": 1.8733,
+          "low": 0.2922,
+          "medium": 0.798,
+          "xhigh": 3.1602
+        },
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
+      }
+    },
+    "qwen4-max": {
+      "provider": "alibaba",
+      "display_name": "Qwen4 Max",
+      "efforts": [
+        "low",
+        "high",
+        "xhigh"
+      ],
+      "effort_default": "high",
+      "pricing": {
+        "input": 1.5,
+        "output": 4.5,
+        "source": "qwen4-pricing",
+        "verified_on": "2026-11-16"
+      },
+      "aa": {
+        "slug": "qwen4-max",
+        "index": {
+          "default": 42.9
+        },
+        "cost_per_task": {
+          "default": 3.2681
+        },
+        "date": "2026-11-16",
+        "index_version": "5.0.1"
       }
     }
   },
@@ -780,9 +1000,9 @@
         "max"
       ],
       "billing": "subscription",
-      "notes": "Aliases 'fable', 'opus', 'sonnet' float to the latest model; pin full IDs in new code.",
-      "source": "claude --help 2.1.310",
-      "verified_on": "2026-10-25",
+      "notes": "Aliases 'fable', 'opus', 'sonnet' float to the latest model; pin full IDs in new code. Fable 5.2 requires Claude Code >=2.1.321 (claude-fable-access); use full ID, preserve explicit 5.1 pins.",
+      "source": "claude --help 2.1.322; claude-fable-access",
+      "verified_on": "2026-11-10",
       "models": {
         "claude-fable-5-1": {
           "name": "claude-fable-5-1",
@@ -801,6 +1021,11 @@
         },
         "claude-haiku-5-5": {
           "name": "claude-haiku-5-5",
+          "names": null,
+          "effort_values": null
+        },
+        "claude-fable-5-2": {
+          "name": "claude-fable-5-2",
           "names": null,
           "effort_values": null
         }
@@ -860,8 +1085,32 @@
       "billing": "subscription",
       "notes": null,
       "source": "codex-models-cache",
-      "verified_on": "2026-10-27",
+      "verified_on": "2026-11-18",
       "models": {
+        "gpt-6.2-astra": {
+          "name": "gpt-6.2-astra",
+          "names": null,
+          "effort_values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ]
+        },
+        "gpt-6.2-sol": {
+          "name": "gpt-6.2-sol",
+          "names": null,
+          "effort_values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ]
+        },
         "gpt-6-astra": {
           "name": "gpt-6-astra",
           "names": null,
@@ -923,9 +1172,9 @@
         "max"
       ],
       "billing": "subscription",
-      "notes": "The model ID carries the thinking level (gemini-3.8-flash-high); --effort is a separate session flag. Display names are listed by `agy models`; IDs are canonical.",
-      "source": "agy models / agy --help 1.4.7",
-      "verified_on": "2026-10-25",
+      "notes": "Use exact level IDs from agy models. Hydrogen supports low/medium/high/xhigh, Carbon low/medium/high. Carbon IDs are documented by Google but absent from this account; optional selections require an exact inventory match, never an API fallback or Orchestrator substitution.",
+      "source": "agy models / agy --help 1.5.6; agy-headless",
+      "verified_on": "2026-11-13",
       "models": {
         "gemini-4-argon": {
           "name": "gemini-4-argon-high",
@@ -944,6 +1193,34 @@
             "high": "gemini-3.8-flash-high"
           },
           "effort_values": null
+        },
+        "gemini-4-hydrogen": {
+          "name": "gemini-4-hydrogen-high",
+          "names": {
+            "low": "gemini-4-hydrogen-low",
+            "medium": "gemini-4-hydrogen-medium",
+            "high": "gemini-4-hydrogen-high",
+            "xhigh": "gemini-4-hydrogen-xhigh"
+          },
+          "effort_values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ]
+        },
+        "gemini-4-carbon": {
+          "name": "gemini-4-carbon-high",
+          "names": {
+            "low": "gemini-4-carbon-low",
+            "medium": "gemini-4-carbon-medium",
+            "high": "gemini-4-carbon-high"
+          },
+          "effort_values": [
+            "low",
+            "medium",
+            "high"
+          ]
         }
       }
     },
@@ -1065,9 +1342,9 @@
       "effort_via": null,
       "effort_values": null,
       "billing": "subscription",
-      "notes": "Effort lives in ~/.qwen/settings.json (model.reasoningEffort).",
+      "notes": "Qwen Code 0.27.1: explicit qwen4-max Token Plan provider configuration at high completed the real ai-consultants structured context check in 13.2s on 2026-11-16. Identity remains requested-only on this CLI path. Effort is user-owned in model.reasoningEffort, not a per-call CLI flag. Existing providers, model pins and credentials are preserved.",
       "source": "ai-consultants query_qwen3.sh",
-      "verified_on": "2026-10-24",
+      "verified_on": "2026-11-16",
       "models": {
         "qwen3.8-max": {
           "name": "qwen3.8-max",
@@ -1076,6 +1353,32 @@
         },
         "qwen3.8-flash": {
           "name": "qwen3.8-flash",
+          "names": null,
+          "effort_values": null
+        },
+        "qwen4-max": {
+          "name": "qwen4-max",
+          "names": null,
+          "effort_values": null
+        }
+      }
+    },
+    "claude-cli-qwencloud": {
+      "binary": "claude",
+      "model_flag": "--model",
+      "effort_via": "flag:--effort",
+      "effort_values": [
+        "low",
+        "high",
+        "xhigh"
+      ],
+      "billing": "subscription",
+      "notes": "Documented QwenCloud Token Plan Anthropic compatibility via /apps/anthropic. Optional explicit profile. On 2026-11-16 the actual Bottega Claude harness at requested high returned the exact hidden code and five paragraphs in 13.5s with provider-reported qwen4-max. This is transport/context evidence, not coding qualification. Use the dedicated Token Plan key.",
+      "source": "qwencloud-claude",
+      "verified_on": "2026-11-16",
+      "models": {
+        "qwen4-max": {
+          "name": "qwen4-max",
           "names": null,
           "effort_values": null
         }

@@ -121,7 +121,7 @@ export function choosePick(picks, credits = [], { installed = () => true } = {})
   return { pick: best, rated, notes };
 }
 
-/** "sviluppo=codex:gpt-6.1-sol@high|claude:claude-sonnet-5-5@high,review=none,orchestratore=claude:claude-opus-5-5@high" */
+/** "sviluppo=codex:gpt-6.2-sol@high|claude:claude-sonnet-5-5@high,review=none,orchestratore=claude:claude-opus-5-5@high" */
 export function parseSetSpec(spec, { catalog, parseTarget, effortValues }) {
   const out = {};
   for (const part of String(spec).split(',').map((s) => s.trim()).filter(Boolean)) {

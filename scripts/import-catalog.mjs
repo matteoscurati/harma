@@ -20,7 +20,7 @@ const out = {
   registry_updated: models.updated,
   source: 'controller-models registry',
   attribution: 'Intelligence Index and cost per task: Artificial Analysis (https://artificialanalysis.ai/)',
-  aa_api_url: sources.sources['aa-api']?.url ?? 'https://artificialanalysis.ai/api/v2/data/llms/models',
+  aa_api_url: sources.sources['aa-api']?.url ?? 'https://artificialanalysis.ai/api/v2/language/models/free',
   models: {},
   harnesses: {},
 };

@@ -38,20 +38,30 @@ const VARIANT_WORDS = new Set([...EFFORT_ORDER, 'non-reasoning', 'reasoning', 't
  * the variant is the first effort word in the name's parenthetical
  * ("Claude Opus 5.5 (Max)") and the family slug drops "-<variant>".
  */
-export function aaFamilies(rows) {
+export function aaFamilies(rows, pick = (r) => r.evaluations?.artificial_analysis_intelligence_index ?? null) {
   const out = {};
   for (const r of rows) {
     const name = r.name ?? '';
     const slug = r.slug ?? '';
-    const index = r.evaluations?.artificial_analysis_intelligence_index ?? null;
     let variant = null;
     const m = name.match(VARIANT);
     if (m) variant = m[2].split(',').map((p) => p.trim().toLowerCase()).find((p) => VARIANT_WORDS.has(p)) ?? null;
     const family = variant && slug.endsWith(`-${variant}`) ? slug.slice(0, -variant.length - 1) : slug;
-    (out[family] ??= {})[variant ?? 'default'] = index;
+    (out[family] ??= {})[variant ?? 'default'] = pick(r);
   }
   return out;
 }
+
+/** Cost per task in USD from an AA language-models row (V2 shape), or null. */
+const aaRowCost = (r) => r.artificial_analysis_intelligence_index_cost?.cost_per_task?.total_cost ?? null;
+
+// The legacy /api/v2/data/llms/models endpoint was retired on 2026-11-04.
+export const AA_FREE_URL = 'https://artificialanalysis.ai/api/v2/language/models/free';
+const aaUrl = (catalog) => (!catalog.aa_api_url || catalog.aa_api_url.includes('/data/llms/') ? AA_FREE_URL : catalog.aa_api_url);
+const MAX_PAGES = 20;
+
+const sameScores = (a, b) => JSON.stringify(Object.entries(a ?? {}).sort()) === JSON.stringify(Object.entries(b ?? {}).sort());
+const nonNull = (o) => Object.fromEntries(Object.entries(o ?? {}).filter(([, v]) => v !== null && v !== undefined));
 
 export function aaKey(env = process.env) {
   if (env.AA_API_KEY) return env.AA_API_KEY;
@@ -69,27 +79,37 @@ export async function refreshFromAA(catalog, { env = process.env, fetchImpl = fe
   if (!key) {
     throw new HarmaError('Nessuna chiave Artificial Analysis', { hint: 'Imposta AA_API_KEY (gratuita su artificialanalysis.ai). Senza chiave harma usa lo snapshot incluso.' });
   }
-  let res;
-  try {
-    res = await fetchImpl(catalog.aa_api_url, { headers: { 'x-api-key': key, Accept: 'application/json', 'User-Agent': 'harma' } });
-  } catch (e) {
-    throw new HarmaError(`Artificial Analysis non raggiungibile: ${e.name}`);
+  const url = aaUrl(catalog);
+  const rows = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    let res;
+    try {
+      res = await fetchImpl(`${url}${url.includes('?') ? '&' : '?'}page=${page}`, { headers: { 'x-api-key': key, Accept: 'application/json', 'User-Agent': 'harma' } });
+    } catch (e) {
+      throw new HarmaError(`Artificial Analysis non raggiungibile: ${e.name}`);
+    }
+    if (!res.ok) throw new HarmaError(`Artificial Analysis ha risposto HTTP ${res.status}`);
+    const body = await res.json();
+    const data = Array.isArray(body) ? body : body?.data;
+    if (!Array.isArray(data)) throw new HarmaError('Risposta Artificial Analysis inattesa');
+    rows.push(...data);
+    if (!body?.pagination?.has_more) break;
   }
-  if (!res.ok) throw new HarmaError(`Artificial Analysis ha risposto HTTP ${res.status}`);
-  const body = await res.json();
-  const rows = Array.isArray(body) ? body : body?.data;
-  if (!Array.isArray(rows)) throw new HarmaError('Risposta Artificial Analysis inattesa');
   const fams = aaFamilies(rows);
+  const costs = aaFamilies(rows, aaRowCost);
   const today = new Date().toISOString().slice(0, 10);
   const next = structuredClone(catalog);
   delete next.origin;
+  next.aa_api_url = url;
   const changes = [];
   for (const [id, m] of Object.entries(next.models)) {
     const fam = m.aa?.slug ? fams[m.aa.slug] : null;
     if (!fam) { changes.push({ model: id, change: m.aa?.slug ? 'non trovato su AA' : 'senza slug AA' }); continue; }
-    const index = Object.fromEntries(Object.entries(fam).filter(([, v]) => v !== null && v !== undefined));
-    if (JSON.stringify(index) !== JSON.stringify(m.aa.index)) changes.push({ model: id, change: 'indice aggiornato', old: m.aa.index, new: index });
+    const index = nonNull(fam);
+    const cost = nonNull(costs[m.aa.slug]);
+    if (!sameScores(index, m.aa.index)) changes.push({ model: id, change: 'indice aggiornato', old: m.aa.index, new: index });
     m.aa.index = Object.keys(index).length ? index : null;
+    if (Object.keys(cost).length) m.aa.cost_per_task = cost;
     m.aa.date = today;
     m.aa.source = 'aa-api';
   }

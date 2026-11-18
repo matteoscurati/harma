@@ -2,6 +2,15 @@
 
 All notable changes to harma, newest first. Versions follow [semantic versioning](https://semver.org/).
 
+## 0.2.1 (2026-11-18)
+
+New models and a fix for score refresh:
+
+- **New models**: GPT-6.2 Astra and GPT-6.2 Sol (Codex), Qwen4 Max (Qwen Code, and Claude Code on QwenCloud as `claude-qwencloud`), Claude Fable 5.2 and Gemini 4 Hydrogen, with prices from the official pages and Artificial Analysis Intelligence Index v5.0.1 per effort
+- **Score refresh**: Artificial Analysis retired the endpoint `harma rank --refresh` used on 2026-11-04, so the command stopped working; it now reads the free `/api/v2/language/models/free` endpoint, follows every page and updates cost per task as well as the index
+- **Catalog**: rebuilt from the controller-models registry on 2026-11-18
+- **Examples**: the docs use `gpt-6.2-sol` in place of `gpt-6.1-sol`
+
 ## 0.2.0 (2026-11-09)
 
 You can now choose the models for each job yourself, or accept the orchestrator's proposals:

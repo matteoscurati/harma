@@ -62,14 +62,14 @@ At dispatch, harma goes down your list in order:
 2. It passes over a model whose credits are low (`scarso`) when a later one has more
 3. It takes the first model left; if none is left, `dispatch` stops and lists why each one was skipped
 
-The dispatch plan names the model it took and its position, for example `n.2 di 2 — n.1 codex:gpt-6.1-sol @ xhigh saltato: crediti scarso`. `harma route <job>` shows which model on your list `dispatch` would take right now.
+The dispatch plan names the model it took and its position, for example `n.2 di 2 — n.1 codex:gpt-6.2-sol @ xhigh saltato: crediti scarso`. `harma route <job>` shows which model on your list `dispatch` would take right now.
 
 ## Choose without the screen
 
 The same choices work as options, which helps when you answer the orchestrator in chat:
 
 ```sh
-harma select --set "sviluppo=codex:gpt-6.1-sol@xhigh|claude:claude-sonnet-5-5@high,review=none"
+harma select --set "sviluppo=codex:gpt-6.2-sol@xhigh|claude:claude-sonnet-5-5@high,review=none"
 harma select --accept
 harma select --show
 ```

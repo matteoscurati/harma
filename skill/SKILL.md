@@ -60,7 +60,7 @@ Before the first dispatch, let the user decide which models each job gets. A job
 - **In this chat**: ask with your structured-question tool (`AskUserQuestion` in Claude Code), offering the proposal and alternatives from `harma rank`. Then record exactly what they chose:
 
   ```sh
-  harma select --set "sviluppo=codex:gpt-6.1-sol@high|claude:claude-sonnet-5-5@high,review=none" --json
+  harma select --set "sviluppo=codex:gpt-6.2-sol@high|claude:claude-sonnet-5-5@high,review=none" --json
   ```
 
   Use `harma select --accept --json` only when the user said to accept all proposals.

@@ -2,7 +2,7 @@
 
 This page lists every `harma` command with its options and exit codes. harma prints its own messages in Italian; every command also takes `--json` for output an agent can parse.
 
-Model targets are written `harness:model`, where the harness is the CLI that runs the model, for example `claude:claude-opus-5-5` or `codex:gpt-6.1-sol`. `harma models` lists the valid pairs on your machine.
+Model targets are written `harness:model`, where the harness is the CLI that runs the model, for example `claude:claude-opus-5-5` or `codex:gpt-6.2-sol`. `harma models` lists the valid pairs on your machine.
 
 ## Set up a project
 

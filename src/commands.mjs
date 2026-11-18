@@ -586,7 +586,7 @@ export async function cmdSelect(flags, opts = {}) {
     const output = opts.output ?? process.stdout;
     if (!input.isTTY || !output.isTTY) {
       throw new HarmaError('harma select è interattivo e qui non c\'è un terminale', {
-        hint: 'Apri la TUI in un tab herdr con: harma select --open --wait · oppure senza TUI: harma select --accept | --set "sviluppo=codex:gpt-6.1-sol@high,…" | --show',
+        hint: 'Apri la TUI in un tab herdr con: harma select --open --wait · oppure senza TUI: harma select --accept | --set "sviluppo=codex:gpt-6.2-sol@high,…" | --show',
       });
     }
     const orch = cfg.orchestrator ? describe(cfg.orchestrator) : 'non impostato';

@@ -40,7 +40,7 @@ harma resume planner --print-only
 harma resume planner --yes
 ```
 
-`--print-only` shows the native command, for example `claude --resume <session_id> --model claude-opus-5-5 --effort high` or `codex resume <session_id> -m gpt-6.1-sol -c model_reasoning_effort="high"`. Under the `confirm` policy, resuming needs `--yes`.
+`--print-only` shows the native command, for example `claude --resume <session_id> --model claude-opus-5-5 --effort high` or `codex resume <session_id> -m gpt-6.2-sol -c model_reasoning_effort="high"`. Under the `confirm` policy, resuming needs `--yes`.
 
 ## Project files
 

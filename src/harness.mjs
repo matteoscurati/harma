@@ -20,15 +20,16 @@ export const HARNESS_META = {
   // Claude Code pointed at another provider: needs that provider's env set up.
   'claude-moonshot': { codexbar: 'moonshot', variantOf: 'claude' },
   'claude-zai': { codexbar: 'zai', variantOf: 'claude' },
+  'claude-qwencloud': { codexbar: 'qwencloud', variantOf: 'claude' },
 };
 
 export function meta(name) {
   return HARNESS_META[name] ?? {};
 }
 
-/** Parse "codex:gpt-6-astra" or a bare model id (harness inferred from the catalog). */
+/** Parse "codex:gpt-6.2-astra" or a bare model id (harness inferred from the catalog). */
 export function parseTarget(spec, catalog) {
-  if (!spec) throw new HarmaError('Manca il modello: usa <harness>:<model>, es. codex:gpt-6-astra');
+  if (!spec) throw new HarmaError('Manca il modello: usa <harness>:<model>, es. codex:gpt-6.2-astra');
   const hs = harnesses(catalog);
   if (spec.includes(':')) {
     const [harness, model] = spec.split(/:(.*)/s);
