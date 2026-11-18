@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { sandbox, CODEX_MODELS_CACHE } from './helpers.mjs';
 import { main, parseArgs } from '../src/cli.mjs';
 import { loadCatalog } from '../src/catalog.mjs';
@@ -123,6 +124,42 @@ test('AA refresh maps "(Max)" variants onto the family and writes the user catal
   assert.equal(fresh.models['claude-opus-5-5'].aa.cost_per_task.max, 4.2);
   assert.equal(fresh.models['qwen4-max'].aa.index.default, 44);
   await assert.rejects(refreshFromAA(catalog, { env: sb.env }), /chiave/);
+});
+
+test('a same-day catalog change invalidates the AA and project inventory caches', async (t) => {
+  const sb = sandbox({ bins: ['claude'] });
+  t.after(() => rmSync(sb.root, { recursive: true, force: true }));
+  const src = join(sb.root, 'src');
+  cpSync(new URL('../src', import.meta.url), src, { recursive: true });
+  const { main: localMain } = await import(pathToFileURL(join(src, 'cli.mjs')));
+  const bundle = join(sb.root, 'data', 'catalog.json');
+  mkdirSync(join(sb.root, 'data'));
+  const bundled = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  bundled.generated_at = new Date().toISOString().slice(0, 10);
+  writeFileSync(bundle, JSON.stringify(bundled));
+  const opts = sb.opts({
+    env: { ...sb.env, AA_API_KEY: 'fixture' },
+    fetchImpl: async () => ({ ok: true, json: async () => ({ data: [{
+      name: 'Claude Opus 5.5 (Max)', slug: 'claude-opus-5-5-max',
+      evaluations: { artificial_analysis_intelligence_index: 77 },
+    }] }) }),
+  });
+  const model = 'claude-opus-5-5';
+  assert.equal(await localMain(['init', '--orchestrator', `claude:${model}`, '--effort', 'high'], opts), 0);
+  assert.equal(await localMain(['models', '--json'], opts), 0);
+  sb.clear();
+  assert.equal(await localMain(['rank', '--refresh', '--json'], opts), 0);
+  assert.equal(JSON.parse(sb.output()).rows.find((r) => r.model === model && r.effort === 'max')?.index, 77);
+
+  const cli = bundled.harnesses['claude-cli'];
+  cli.models[model].effort_values = cli.effort_values.filter((effort) => effort !== 'max');
+  writeFileSync(bundle, JSON.stringify(bundled));
+  sb.clear();
+  assert.equal(await localMain(['rank', '--json'], opts), 0);
+  const data = JSON.parse(sb.output());
+  assert.ok(data.rows.some((r) => r.model === model && r.effort === 'high'));
+  assert.ok(!data.rows.some((r) => r.model === model && r.effort === 'max'));
+  assert.equal(data.catalog.origin, 'bundled');
 });
 
 // ── 5. routing ─────────────────────────────────────────────────────────────

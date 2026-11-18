@@ -1,7 +1,7 @@
 // The model catalog: models, efforts, prices, Artificial Analysis figures,
 // and how each agent CLI takes a model and an effort.
-// The bundled snapshot (data/catalog.json) is overridden by a user-level
-// refresh (~/.config/harma/catalog.json) when that one is newer.
+// A local AA refresh supplies benchmark figures for the bundled snapshot.
+import { createHash } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -9,19 +9,29 @@ import { readJson } from './util.mjs';
 
 const BUNDLED = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'catalog.json');
 
-export function userCatalogPath(env = process.env) {
+export function aaCachePath(env = process.env) {
   const base = env.XDG_CONFIG_HOME || join(env.HOME || homedir(), '.config');
-  return join(base, 'harma', 'catalog.json');
+  return join(base, 'harma', 'aa-benchmarks.json');
 }
 
 export function loadCatalog({ env = process.env, path } = {}) {
   if (path) return readJson(path);
   const bundled = readJson(BUNDLED);
-  const user = readJson(userCatalogPath(env));
-  if (user && (user.generated_at ?? '') >= (bundled?.generated_at ?? '')) {
-    return { ...user, origin: 'user-refresh' };
+  const catalog_fingerprint = createHash('sha256').update(JSON.stringify(bundled)).digest('hex');
+  const catalog = { ...bundled, catalog_fingerprint, origin: 'bundled' };
+  const user = readJson(aaCachePath(env));
+  if (user?.catalog_fingerprint !== catalog_fingerprint ||
+      (user.generated_at ?? '') < (bundled?.generated_at ?? '')) {
+    return catalog;
   }
-  return { ...bundled, origin: 'bundled' };
+  const models = { ...catalog.models };
+  for (const [id, benchmark] of Object.entries(user.benchmarks ?? {})) {
+    if (!Object.hasOwn(models, id) || !models[id].aa || !benchmark?.date) continue;
+    const { index, cost_per_task, date } = benchmark;
+    const aa = { ...models[id].aa, index, cost_per_task, date, source: 'aa-api' };
+    models[id] = { ...models[id], aa };
+  }
+  return { ...catalog, models, generated_at: user.generated_at, origin: 'user-refresh' };
 }
 
 /** "claude-cli" -> "claude"; "claude-cli-zai" -> "claude-zai". */
