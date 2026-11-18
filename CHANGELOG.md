@@ -2,7 +2,7 @@
 
 All notable changes to harma, newest first. Versions follow [semantic versioning](https://semver.org/).
 
-## Unreleased
+## 0.2.2 (2026-11-18)
 
 herdr backend, checked against the herdr 0.9.5 documentation:
 
