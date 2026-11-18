@@ -1,0 +1,49 @@
+# Publishes harma-kit to npm when a v* tag is pushed, through npm Trusted
+# Publishing (OIDC): no npm token is stored anywhere. The trusted publisher
+# on npmjs.com must name this repository and this file (publish.yml).
+name: publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to publish, e.g. v0.2.1'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Tag matches package.json
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          version="v$(node -p "require('./package.json').version")"
+          test "$tag" = "$version" || { echo "tag $tag != package.json $version"; exit 1; }
+      - name: Skip if already published
+        id: check
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          if npm view "harma-kit@$v" version >/dev/null 2>&1; then
+            echo "harma-kit@$v is already on npm"; echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - run: npm test
+        if: steps.check.outputs.skip != 'true'
+      - run: npm publish
+        if: steps.check.outputs.skip != 'true'

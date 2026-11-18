@@ -37,6 +37,10 @@ The script also reads the path from `HARMA_CONTROLLER_MODELS`. Users can refresh
 1. Update `version` in `package.json` and add an entry to `CHANGELOG.md`
 2. Run `npm test` and `node bin/harma.mjs doctor`
 3. Check the package contents with `npm pack --dry-run`
-4. Push to GitHub, then run `npm publish`; `prepublishOnly` runs the tests again
+4. Commit, then tag and push: `git tag -a vX.Y.Z -m "harma X.Y.Z" && git push origin main vX.Y.Z`
+
+Pushing the tag starts `.github/workflows/publish.yml`, which checks that the tag matches `package.json`, runs the tests and publishes to npm through npm Trusted Publishing, so no npm login or token is needed. A version already on npm is skipped. To publish an existing tag again, run the workflow by hand: `gh workflow run publish.yml -f tag=vX.Y.Z`.
+
+Trusted Publishing is set up once on npmjs.com, in the `harma-kit` package settings: add a trusted publisher of type GitHub Actions with owner `matteoscurati`, repository `harma` and workflow `publish.yml`.
 
 The package is published as `harma-kit`, and it installs the `harma` and `harma-kit` commands.
