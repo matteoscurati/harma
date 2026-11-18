@@ -2,6 +2,14 @@
 
 All notable changes to harma, newest first. Versions follow [semantic versioning](https://semver.org/).
 
+## Unreleased
+
+herdr backend, checked against the herdr 0.9.5 documentation:
+
+- **No empty tab**: a new `harma:<project>` workspace no longer keeps herdr's first tab as an idle shell next to the agents. The first agent, or the selection screen, runs in that tab; when it needs another folder or its own environment, harma opens a new tab and closes the empty one. herdr closes the workspace with its last agent, and the next dispatch creates a new one
+- **`harma read` while working**: reading a working Claude Code agent failed with `agent_not_idle`; harma now falls back to the visible screen
+- **`cleanup --workspace`**: a workspace herdr already closed counts as closed, so harma forgets its ID instead of reporting an error
+
 ## 0.2.1 (2026-11-18)
 
 New models and a fix for score refresh:

@@ -213,8 +213,11 @@ test('select --open --wait opens a focused herdr tab and returns the saved choic
   assert.equal(res.saved, true);
   assert.equal(res.roster.sviluppo.model, 'gpt-6-astra');
   const calls = sb.state().herdr.calls;
-  const create = calls.find((c) => c[0] === 'tab' && c[1] === 'create');
+  // A new workspace: opened in focus, its root tab renamed and reused for the TUI.
+  const create = calls.find((c) => c[0] === 'workspace' && c[1] === 'create');
   assert.ok(create.includes('--focus'));
+  assert.deepEqual(calls.find((c) => c[0] === 'tab' && c[1] === 'rename'), ['tab', 'rename', 'w1:t0', 'harma-select']);
+  assert.equal(calls.find((c) => c[0] === 'tab' && c[1] === 'create'), undefined);
   const runCall = calls.find((c) => c[0] === 'pane' && c[1] === 'run');
   assert.match(runCall[3], /harma\.mjs select --close-tab$/);
 });
