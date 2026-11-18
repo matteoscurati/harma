@@ -24,13 +24,20 @@ The suite runs with fake `herdr`, `hc`, `codexbar` and agent CLIs on a private `
 
 ## Update the catalog
 
-The catalog comes from a local checkout of controller-models, the model registry that holds the Artificial Analysis snapshots:
+The catalog comes from controller-models, the model registry that holds prices and the Artificial Analysis snapshots. harma is one of its consumers, so the registry rewrites `data/catalog.json` on a new branch of this repo and runs the tests:
+
+```sh
+cm sync harma          # show what would change
+cm sync harma --write  # write it on branch models/sync-<date>
+```
+
+Without `cm`, the same file comes from a local checkout of the registry:
 
 ```sh
 node scripts/import-catalog.mjs path_to_controller_models
 ```
 
-The script also reads the path from `HARMA_CONTROLLER_MODELS`. Users can refresh scores on their own machine with `harma rank --refresh`, without a new release.
+The script also reads the path from `HARMA_CONTROLLER_MODELS`. Both produce the same bytes, dated with the registry's `updated` date. The catalog is generated: change models in the registry, not in `data/catalog.json`. Users can refresh scores on their own machine with `harma rank --refresh`, without a new release.
 
 ## Release
 

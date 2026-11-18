@@ -116,7 +116,7 @@ export function estimateCost(session, catalog) {
 
 function normalizeModel(name, catalog) {
   if (!name) return null;
-  // "claude-opus-5-5-20261001" or "claude-opus-5-5[1m]" -> catalog id
+  // A dated id ("<id>-YYYYMMDD") or a context suffix ("<id>[1m]") -> catalog id
   return Object.keys(catalog.models ?? {}).find((id) => name.startsWith(id)) ?? null;
 }
 

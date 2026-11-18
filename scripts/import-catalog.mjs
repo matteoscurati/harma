@@ -16,7 +16,7 @@ const sources = read('registry/sources.json');
 
 const out = {
   schema_version: 1,
-  generated_at: new Date().toISOString().slice(0, 10),
+  generated_at: models.updated,
   registry_updated: models.updated,
   source: 'controller-models registry',
   attribution: 'Intelligence Index and cost per task: Artificial Analysis (https://artificialanalysis.ai/)',
