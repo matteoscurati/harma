@@ -6,16 +6,17 @@
 //   read(target, lines)                 -> text
 //   close(target)                       -> {ok}
 // herdr: the full app (workspaces, tabs, panes). Where an agent goes is the
-// layout: inside herdr, next to the orchestrator (a tab in its workspace, or
-// a split beside its pane); outside, a per-project workspace. An agent can
-// also get its own git worktree, which herdr opens as a grouped workspace.
+// layout: inside herdr, next to the orchestrator (a pane beside its pane
+// while there is room, then a tab in its workspace); outside, a per-project
+// workspace. An agent can also get its own git worktree, which herdr opens as
+// a grouped workspace, or run on another machine's herdr (--machine).
 // hc (herdr-core): headless terminals; ownership through labels.
 import { basename } from 'node:path';
 import { createHash } from 'node:crypto';
-import { run, which, parseJson, HarmaError } from './util.mjs';
+import { run, which, parseJson, HarmaError, shq } from './util.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-import { meta } from './harness.mjs';
+import { herdrKind } from './harness.mjs';
 import { readTrustDialog } from './trust.mjs';
 
 export function projectId(root) {
@@ -43,26 +44,37 @@ function okJson(res, what) {
 
 // ---------------------------------------------------------------- herdr
 export const LAYOUTS = ['auto', 'workspace', 'tab', 'split'];
+// A split must leave both panes usable: at least this many columns side by
+// side, or rows one above the other. Cells are about twice as tall as wide.
+const MIN_COLS = 60;
+const MIN_ROWS = 15;
 
 export class HerdrBackend {
-  constructor({ bin = 'herdr', env = process.env, config = {} } = {}) {
+  constructor({ bin = 'herdr', env = process.env, config = {}, machine = null } = {}) {
     this.name = 'herdr';
     this.bin = bin;
     this.env = env;
-    this.config = config; // project config (holds herdr.workspace_id)
+    this.config = config; // project config (holds herdr.workspace_id, and one per machine)
+    this.machine = machine; // a saved herdr machine profile: every call goes to its server
     this.trustPolls = 30; // after answering a trust dialog: up to 30 × 500 ms
     this.trustPollMs = 500;
     this.shellWaitMs = 20_000; // a new pane's shell may still be starting: retry agent start this long
     this.shellPollMs = 250;
   }
 
-  exec(args, opts = {}) { return run(this.bin, args, { env: this.env, ...opts }); }
+  exec(args, opts = {}) { return run(this.bin, this.machine ? ['--machine', this.machine, ...args] : args, { env: this.env, ...opts }); }
+
+  /** Inside herdr: the orchestrator runs in a herdr pane on this machine. */
+  inside() { return !this.machine && this.env.HERDR_ENV === '1' && Boolean(this.env.HERDR_WORKSPACE_ID); }
 
   async available() {
     if (!which(this.bin, this.env)) return { ok: false, detail: 'herdr non è nel PATH' };
-    const res = await this.exec(['status', 'server'], { timeout: 15_000 });
+    const res = await this.exec(['status', 'server'], { timeout: 30_000 });
     const running = /status:\s*running/.test(res.stdout);
     const version = (res.stdout.match(/version:\s*(\S+)/) ?? [])[1] ?? null;
+    if (this.machine) {
+      return { ok: running, version, detail: running ? `server attivo su ${this.machine}` : `server herdr su ${this.machine} non raggiungibile: ${res.stderr.trim() || 'controlla herdr machine status'}` };
+    }
     return { ok: running, version, detail: running ? 'server attivo' : 'server herdr non attivo (avvia herdr)' };
   }
 
@@ -72,7 +84,7 @@ export class HerdrBackend {
    * the caller fills it instead of leaving an empty shell tab behind.
    */
   async ensureWorkspace(root, project, { focus = false } = {}) {
-    const known = this.config.herdr?.workspace_id;
+    const known = this.machine ? this.config.herdr?.machines?.[this.machine]?.workspace_id : this.config.herdr?.workspace_id;
     if (known) {
       const got = await this.exec(['workspace', 'get', known]);
       if (got.ok) return { id: known, created: false, root: null };
@@ -110,37 +122,64 @@ export class HerdrBackend {
   }
 
   /**
-   * Where agents go. auto: inside herdr (HERDR_ENV=1 with a workspace id),
-   * a tab in the orchestrator's workspace; outside, the project workspace.
-   * Returns {mode, direction}.
+   * Where agents go. auto inside herdr (HERDR_ENV=1 with a workspace id): a
+   * pane beside the orchestrator while both stay usable, else a tab in its
+   * workspace; outside herdr, or on another machine, the project workspace.
+   * Returns {mode, direction, fallback}: direction null means "pick by size".
    */
   layoutFor(layout = 'auto') {
-    const inside = this.env.HERDR_ENV === '1' && Boolean(this.env.HERDR_WORKSPACE_ID);
-    const [mode, direction = 'right'] = String(layout || 'auto').split(':');
-    if (!LAYOUTS.includes(mode) || !['right', 'down'].includes(direction)) {
-      throw new HarmaError(`Layout sconosciuto: ${layout}`, { hint: 'auto | workspace | tab | split | split:down' });
+    const [mode, direction = null] = String(layout || 'auto').split(':');
+    if (!LAYOUTS.includes(mode) || ![null, 'right', 'down'].includes(direction)) {
+      throw new HarmaError(`Layout sconosciuto: ${layout}`, { hint: 'auto | workspace | tab | split | split:right | split:down' });
     }
-    if (mode === 'auto') return { mode: inside ? 'tab' : 'workspace', direction };
+    if (this.machine) {
+      if (mode === 'auto' || mode === 'workspace') return { mode: 'workspace' };
+      throw new HarmaError(`Layout ${mode}: su ${this.machine} gli agenti si aprono nel workspace del progetto`, { hint: 'Ometti --layout, o usa --layout workspace' });
+    }
+    const inside = this.inside();
+    if (mode === 'auto') return inside ? { mode: 'split', direction: null, fallback: 'tab' } : { mode: 'workspace' };
     if ((mode === 'tab' || mode === 'split') && !inside) {
       throw new HarmaError(`Layout ${mode}: harma non gira dentro herdr`, { hint: 'Avvia l\'orchestratore in un pane herdr, oppure usa --layout workspace' });
     }
     if (mode === 'split' && !this.env.HERDR_PANE_ID) throw new HarmaError('Layout split: manca HERDR_PANE_ID');
-    return { mode, direction };
+    return { mode, direction, fallback: null };
+  }
+
+  /**
+   * Which way to split the orchestrator's pane, as herdr advises: a wide pane
+   * to the right, a narrow or tall one down. null when neither way leaves two
+   * usable panes and a fallback exists; with no fallback (an explicit
+   * --layout split), the preferred way anyway.
+   */
+  async splitDirection(fallback) {
+    const pane = this.env.HERDR_PANE_ID;
+    const data = parseJson((await this.exec(['pane', 'layout', '--pane', pane])).stdout);
+    const rect = data?.result?.layout?.panes?.find((p) => p.pane_id === pane)?.rect;
+    if (!rect) return fallback ? null : 'right';
+    const prefer = rect.width >= 2 * rect.height ? 'right' : 'down';
+    const room = { right: rect.width >= 2 * MIN_COLS, down: rect.height >= 2 * MIN_ROWS };
+    if (room[prefer]) return prefer;
+    const other = prefer === 'right' ? 'down' : 'right';
+    if (room[other]) return other;
+    return fallback ? null : prefer;
   }
 
   /** A terminal for one process, per layout. Returns {tabId, paneId, layout, workspace, workspaceCreated}. */
   async place({ layout, root, project, cwd, label, env = {}, focus = false }) {
-    const { mode, direction } = this.layoutFor(layout);
+    const { mode, direction, fallback } = this.layoutFor(layout);
     if (mode === 'workspace') {
-      const ws = { ...await this.ensureWorkspace(root, project, { focus }), cwd: root };
+      // On another machine the project root is a local path: the workspace opens in the agent's folder there.
+      const home = this.machine ? cwd : root;
+      const ws = { ...await this.ensureWorkspace(home, project, { focus }), cwd: home };
       const t = await this.placeTab(ws, { cwd, label, env, focus });
-      return { ...t, layout: 'workspace', workspace: ws.id, workspaceCreated: ws.created };
+      return { ...t, layout: 'workspace', workspace: ws.id, workspaceCreated: ws.created, machine: this.machine };
     }
-    if (mode === 'tab') {
+    const way = mode === 'split' ? direction ?? await this.splitDirection(fallback) : null;
+    if (mode === 'tab' || !way) {
       const t = await this.placeTab({ id: this.env.HERDR_WORKSPACE_ID, created: false }, { cwd, label, env, focus });
       return { ...t, layout: 'tab', workspace: this.env.HERDR_WORKSPACE_ID, workspaceCreated: false };
     }
-    const args = ['pane', 'split', '--pane', this.env.HERDR_PANE_ID, '--direction', direction, '--cwd', cwd, focus ? '--focus' : '--no-focus'];
+    const args = ['pane', 'split', '--pane', this.env.HERDR_PANE_ID, '--direction', way, '--cwd', cwd, focus ? '--focus' : '--no-focus'];
     for (const [k, v] of Object.entries(env)) args.push('--env', `${k}=${v}`);
     const pane = okJson(await this.exec(args), 'herdr pane split')?.result?.pane;
     if (!pane?.pane_id) throw new HarmaError('herdr pane split: risposta senza pane_id');
@@ -165,10 +204,10 @@ export class HerdrBackend {
 
   async start({ name, cwd, argv, env = {}, harness, root, project, layout, worktree }) {
     checkAgentName(name);
-    const kind = meta(harness).herdrKind;
-    if (!kind) throw new HarmaError(`herdr non riconosce ${harness} come agente`, { hint: 'Usa --backend hc per questa CLI' });
+    const kind = herdrKind(harness);
+    if (!kind) throw new HarmaError(`herdr non riconosce ${harness} come agente interattivo`, { hint: 'Usa --headless (lavoro non interattivo) o --backend hc' });
     const at = worktree
-      ? await this.worktree({ root, name, branch: worktree.branch, env })
+      ? await this.worktree({ root: this.machine ? cwd : root, name, branch: worktree.branch, env })
       : await this.place({ layout, root, project, cwd, label: name, env });
     const startArgs = ['agent', 'start', name, '--kind', kind, '--pane', at.paneId, '--timeout', '60000'];
     if (argv.length > 1) startArgs.push('--', ...argv.slice(1));
@@ -190,8 +229,55 @@ export class HerdrBackend {
     }
     return {
       target: name, tab: at.tabId, pane: at.paneId, layout: at.layout, workspace: at.workspace,
-      workspaceCreated: at.workspaceCreated, cwd: at.worktree?.path ?? cwd, worktree: at.worktree ?? null, blocked,
+      workspaceCreated: at.workspaceCreated, cwd: at.worktree?.path ?? cwd, worktree: at.worktree ?? null, blocked, machine: this.machine,
     };
+  }
+
+  /**
+   * A headless job: a terminal placed like an agent's, where `command`
+   * (harma _run <job>) starts once the shell is at its prompt. The runner
+   * reports to herdr and takes the agent's name; harma waits for that name to
+   * know the job started. Returns what start() returns.
+   */
+  async startHeadless({ name, cwd, root, project, layout, worktree, command }) {
+    checkAgentName(name);
+    const at = worktree
+      ? await this.worktree({ root, name, branch: worktree.branch })
+      : await this.place({ layout, root, project, cwd, label: name });
+    if (!await this.waitForShell(at.paneId)) {
+      await this.discard(at, name);
+      throw new HarmaError(`la shell del pane non è arrivata al prompt entro ${this.shellWaitMs / 1000} s; il lavoro non è partito`);
+    }
+    okJson(await this.exec(['pane', 'run', at.paneId, command.map(shq).join(' ')]), 'herdr pane run');
+    const deadline = Date.now() + this.shellWaitMs;
+    while (!(await this.exec(['agent', 'get', name])).ok) {
+      if (Date.now() >= deadline) {
+        const screen = (await this.exec(['pane', 'read', at.paneId, '--source', 'recent', '--lines', '20'])).stdout; // plain text
+        await this.discard(at, name);
+        throw new HarmaError(`harma _run non è partito nel pane ${at.paneId}`, { hint: screen.trim().split('\n').slice(-5).join(' · ') || 'nessun output nel pane' });
+      }
+      await sleep(this.shellPollMs);
+    }
+    return {
+      target: name, tab: at.tabId, pane: at.paneId, layout: at.layout, workspace: at.workspace,
+      workspaceCreated: at.workspaceCreated, cwd: at.worktree?.path ?? cwd, worktree: at.worktree ?? null, blocked: false, machine: this.machine,
+    };
+  }
+
+  /**
+   * Wait until the pane's shell is at its prompt: the shell alone in the
+   * foreground, which is how herdr defines an available shell. False after
+   * shellWaitMs. Text typed earlier could reach a startup script instead.
+   */
+  async waitForShell(pane) {
+    const deadline = Date.now() + this.shellWaitMs;
+    for (;;) {
+      const info = parseJson((await this.exec(['pane', 'process-info', '--pane', pane])).stdout)?.result?.process_info;
+      const fg = info?.foreground_processes ?? [];
+      if (info && fg.length && fg.every((p) => p.pid === info.shell_pid)) return true;
+      if (Date.now() >= deadline) return false;
+      await sleep(this.shellPollMs);
+    }
   }
 
   /**
@@ -302,7 +388,9 @@ export class HerdrBackend {
 
   /** A focused tab in the project workspace running a shell command (used for the select TUI). */
   async openTab({ root, project, label, command, layout }) {
-    const at = await this.place({ layout, root, project, cwd: root, label, focus: true });
+    // The selection screen wants room: by default a tab, not a split.
+    const where = (layout ?? 'auto') === 'auto' && this.inside() ? 'tab' : layout;
+    const at = await this.place({ layout: where, root, project, cwd: root, label, focus: true });
     okJson(await this.exec(['pane', 'run', at.paneId, command]), 'herdr pane run');
     return { tab: at.tabId, pane: at.paneId, layout: at.layout, workspace: at.workspace, workspaceCreated: at.workspaceCreated };
   }
@@ -333,6 +421,11 @@ export class HcBackend {
     const v = await this.exec(['--version'], { timeout: 10_000 });
     const st = await this.exec(['server', 'status', '--json'], { timeout: 15_000 });
     return { ok: st.ok, version: v.stdout.trim().split(/\s+/).pop() || null, detail: st.ok ? 'core attivo' : 'core non raggiungibile (hc server start)' };
+  }
+
+  /** A headless job: `command` (harma _run <job>) in a background terminal. */
+  async startHeadless({ name, cwd, command, project }) {
+    return this.start({ name, cwd, argv: command, project });
   }
 
   async start({ name, cwd, argv, env = {}, project }) {
@@ -383,9 +476,9 @@ export class HcBackend {
 }
 
 /** Pick the backend: explicit, else configured, else the first that is running (herdr, then hc). */
-export async function selectBackend({ choice, config = {}, env = process.env } = {}) {
+export async function selectBackend({ choice, config = {}, env = process.env, machine = null } = {}) {
   const want = choice ?? (config.backend && config.backend !== 'auto' ? config.backend : null);
-  const make = (n) => (n === 'herdr' ? new HerdrBackend({ env, config }) : new HcBackend({ env }));
+  const make = (n) => (n === 'herdr' ? new HerdrBackend({ env, config, machine }) : new HcBackend({ env }));
   if (want) {
     if (!['herdr', 'hc'].includes(want)) throw new HarmaError(`Backend sconosciuto: ${want}`, { hint: 'herdr | hc' });
     const b = make(want);

@@ -2,6 +2,16 @@
 
 All notable changes to harma, newest first. Versions follow [semantic versioning](https://semver.org/).
 
+## 0.4.0 (2026-11-19)
+
+More ways to run agents in herdr:
+
+- **Beside the orchestrator by default**: inside herdr, `--layout auto` now opens a new agent in a pane beside the orchestrator, as herdr advises for subagents: to the right when the pane is wide, down when it is narrow, and only while both panes keep at least 60 columns or 15 rows. Then it opens tabs, as before. `split` picks the direction by size; `split:right` and `split:down` force it. The selection screen still opens as a tab
+- **Headless jobs**: `dispatch --headless` runs one task in the CLI's print mode (`claude -p`, `codex exec`, `agy -p`, `kimi -p`, `qwen -p`, `grok -p`, `muse exec`, `mmx text chat`, `vibe --prompt-file`) and keeps prompt, answer and result in `.harma/runs/`. On herdr harma's runner reports the job's state on its pane, so it shows up as an agent named after the job, `working` then `done`. `read` prints the answer, `--wait` waits for it, `--max-time` limits the job (default one hour), `send` is refused, and `cleanup` closes a finished job without its session ID
+- **CLIs herdr doesn't drive**: MiniMax (`mmx`) and Mistral Vibe (`vibe`) now run on herdr as headless jobs instead of failing with "usa --backend hc". Claude Code on Z.ai, Moonshot or QwenCloud now starts on herdr as the Claude Code it is
+- **Another machine**: `dispatch --machine <name> --cwd <folder>` runs the agent on the herdr server of a machine saved with `herdr machine add`. `status`, `read`, `send`, `cleanup`, `resume` and `cleanup --workspace` follow it there
+- **Mistral Vibe model**: harma passed `env:VIBE_ACTIVE_MODEL` as an argument; it now sets that variable
+
 ## 0.3.2 (2026-11-19)
 
 Fixes for agents in herdr:

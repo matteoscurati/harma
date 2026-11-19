@@ -10,8 +10,9 @@ const S = process.env.FAKE_STATE;
 const st = fs.existsSync(S) ? JSON.parse(fs.readFileSync(S, 'utf8')) : {};
 st.herdr ??= { ws: 0, tab: 0, agents: [], calls: [] };
 const h = st.herdr;
-const a = process.argv.slice(2);
+let a = process.argv.slice(2);
 h.calls.push(a);
+if (a[0] === '--machine') { h.machines = [...(h.machines ?? []), a[1]]; a = a.slice(2); }
 const save = () => fs.writeFileSync(S, JSON.stringify(st));
 const ok = (result) => { save(); console.log(JSON.stringify({ id: 'cli', result })); process.exit(0); };
 const fail = (code, message) => { save(); console.error(JSON.stringify({ error: { code, message } })); process.exit(1); };
@@ -40,6 +41,7 @@ if (g === 'tab' && c === 'focus') { h.focused = a[2]; return ok({ tab: { tab_id:
 if (g === 'pane' && c === 'split') {
   h.tab++; const from = arg('--pane'); const ws = from.split(':')[0]; const id = ws + ':p' + h.tab;
   h.paneCwd[id] = arg('--cwd'); h.splits = [...(h.splits ?? []), { from, id, direction: arg('--direction'), env: a.filter((x, i) => a[i - 1] === '--env') }];
+  const r = h.paneSize?.[from]; if (r) { if (arg('--direction') === 'right') r.width = Math.floor(r.width / 2); else r.height = Math.floor(r.height / 2); }
   return ok({ pane: { pane_id: id, tab_id: from.replace(/:p.*/, ':t1'), workspace_id: ws } });
 }
 if (g === 'pane' && c === 'rename') { h.labels = { ...h.labels, [a[2]]: a[3] }; return ok({ pane: { pane_id: a[2] } }); }
@@ -60,7 +62,55 @@ if (g === 'worktree' && c === 'remove') {
   h.worktrees = h.worktrees.filter((x) => x !== wt); h.removedWorktrees = [...(h.removedWorktrees ?? []), wt.path];
   return ok({ type: 'worktree_removed', path: wt.path, workspace_id: w });
 }
+// Geometry: FAKE_PANE_SIZE=WxH is the orchestrator's pane; each split halves the pane it splits.
+h.paneSize ??= {};
+const sizeOf = (pane) => {
+  if (!h.paneSize[pane] && process.env.FAKE_PANE_SIZE) { const [w, hh] = process.env.FAKE_PANE_SIZE.split('x').map(Number); h.paneSize[pane] = { width: w, height: hh }; }
+  return h.paneSize[pane];
+};
+if (g === 'pane' && c === 'layout') {
+  const pane = arg('--pane'); const r = sizeOf(pane);
+  if (!r) return fail('unknown', 'fake herdr: no geometry');
+  return ok({ layout: { panes: [{ pane_id: pane, rect: { x: 0, y: 0, ...r } }] } });
+}
+// FAKE_SHELL_STARTING=n: the first n looks at a new pane find its startup files still running.
+if (g === 'pane' && c === 'process-info') {
+  h.infoCalls = (h.infoCalls ?? 0) + 1;
+  const busy = h.infoCalls <= Number(process.env.FAKE_SHELL_STARTING ?? 0);
+  return ok({ process_info: { pane_id: arg('--pane'), shell_pid: 100, foreground_processes: busy ? [{ pid: 101, name: 'git' }, { pid: 100, name: 'zsh' }] : [{ pid: 100, name: 'zsh' }] } });
+}
+// pane run of "harma _run <job>": the runner names itself after the job (unless FAKE_RUN_DEAD);
+// FAKE_RUN_FINISH=1 also lets it finish at once, writing its answer and result.
+if (g === 'pane' && c === 'run' && / _run /.test(a[3] ?? '')) {
+  h.runs = [...(h.runs ?? []), { pane: a[2], command: a[3] }];
+  if (process.env.FAKE_RUN_DEAD) return ok({ queued: true });
+  const jobPath = a[3].split(' ').pop().replace(/^'|'$/g, '');
+  const job = JSON.parse(fs.readFileSync(jobPath, 'utf8'));
+  const done = Boolean(process.env.FAKE_RUN_FINISH);
+  h.agents.push({ name: job.name, agent: 'harma-' + job.harness, pane_id: a[2], tab_id: a[2].replace(':p', ':t'), agent_status: done ? 'done' : 'working', cwd: '/x', agent_session: null });
+  if (done) {
+    fs.writeFileSync(job.run_dir + '/output.md', 'risposta a: ' + fs.readFileSync(job.prompt_file, 'utf8') + String.fromCharCode(10));
+    fs.writeFileSync(job.run_dir + '/result.json', JSON.stringify({ exit_code: 0, signal: null, session_id: job.session_id ?? 'run-sess-1', ended_at: 'now' }));
+  }
+  return ok({ queued: true });
+}
 if (g === 'pane' && c === 'run') return ok({ queued: true });
+if (g === 'pane' && c === 'read') { save(); console.log('~ ❯ node harma _run job.json' + String.fromCharCode(10) + 'zsh: command not found: node'); process.exit(0); }
+// The runner's own reports, as herdr records them on the pane.
+if (g === 'pane' && c === 'report-agent') {
+  const pane = a[a.length - 1]; let ag = h.agents.find((x) => x.pane_id === pane);
+  if (!ag) { ag = { name: null, agent: arg('--agent'), pane_id: pane, tab_id: pane.replace(':p', ':t'), cwd: '/x', agent_session: null }; h.agents.push(ag); }
+  ag.agent_status = arg('--state') === 'idle' && ag.agent_status === 'working' ? 'done' : arg('--state');
+  h.reports = [...(h.reports ?? []), arg('--state')];
+  return ok({ type: 'ok' });
+}
+if (g === 'pane' && c === 'report-agent-session') {
+  const dd = a.indexOf('--'); const pane = a[dd >= 0 ? dd - 1 : a.length - 1];
+  const ag = h.agents.find((x) => x.pane_id === pane); if (ag) ag.agent_session = { value: arg('--agent-session-id') };
+  h.sessionReports = [...(h.sessionReports ?? []), { id: arg('--agent-session-id'), resume: dd >= 0 ? a.slice(dd + 1) : null }];
+  return ok({ type: 'ok' });
+}
+if (g === 'agent' && c === 'rename') { const ag = h.agents.find((x) => x.pane_id === a[2] || x.name === a[2]); if (!ag) return fail('agent_not_found', 'no agent'); ag.name = a[3]; return ok({ agent: ag }); }
 // FAKE_PANE_BUSY=n: the pane's shell is still starting for the first n agent start calls.
 if (g === 'agent' && c === 'start' && (h.startCalls = (h.startCalls ?? 0) + 1) <= Number(process.env.FAKE_PANE_BUSY ?? 0)) {
   return fail('agent_pane_busy', 'agent target pane ' + arg('--pane') + ' is not an available shell');
@@ -171,7 +221,7 @@ export function sandbox({ codexbar = CODEXBAR_FIXTURE, bins = ['herdr', 'hc', 'c
   const bin = join(root, 'bin');
   const project = join(root, 'project');
   for (const d of [home, bin, project]) mkdirSync(d, { recursive: true });
-  const files = { herdr: FAKE_HERDR, hc: FAKE_HC, codexbar: fakeCodexbar(codexbar), claude: VERSION('claude'), codex: VERSION('codex-cli'), kimi: VERSION('kimi'), agy: FAKE_AGY };
+  const files = { herdr: FAKE_HERDR, hc: FAKE_HC, codexbar: fakeCodexbar(codexbar), claude: VERSION('claude'), codex: VERSION('codex-cli'), kimi: VERSION('kimi'), agy: FAKE_AGY, mmx: VERSION('mmx') };
   for (const name of bins) {
     const p = join(bin, name);
     writeFileSync(p, files[name]);

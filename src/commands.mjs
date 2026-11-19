@@ -1,10 +1,10 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { resolve, join } from 'node:path';
 import { loadCatalog, harnesses } from './catalog.mjs';
-import { parseTarget, effortValues, launchSpec, resumeArgv, meta } from './harness.mjs';
+import { parseTarget, effortValues, launchSpec, resumeArgv, meta, herdrKind, headlessOf, headlessSpec } from './harness.mjs';
 import {
   projectRoot, loadConfig, saveConfig, appendEvent, readEvents, agentsFromEvents,
-  writeCache, readCache, hasProject, DEFAULT_CONFIG,
+  writeCache, readCache, hasProject, DEFAULT_CONFIG, ensureGitignore,
 } from './state.mjs';
 import { AGY_NEON, agyModelIds, inventory } from './inventory.mjs';
 import { collectCredits } from './credits.mjs';
@@ -13,7 +13,7 @@ import { route, taskProfile, TASK_PROFILES } from './route.mjs';
 import { selectBackend, HerdrBackend, HcBackend, projectId, checkAgentName, LAYOUTS } from './backends.mjs';
 import { trustableFolder } from './trust.mjs';
 import { usageFor, estimateCost, findCodexSession } from './usage.mjs';
-import { table, HarmaError, now, which, readJson, run } from './util.mjs';
+import { table, HarmaError, now, which, readJson, run, shq } from './util.mjs';
 import { modelOptions, selectionRows, applySelection, parseSetSpec, describe, describePick, ORCHESTRATOR, rosterPicks, choosePick } from './roster.mjs';
 import { initState, runTui } from './tui.mjs';
 import { statePath } from './state.mjs';
@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 export const EXIT_NEEDS_CONFIRM = 3;
 export const EXIT_BLOCKED = 4; // agent started, waiting on a dialog; task not delivered
 const CREDIT_TTL_MS = 15 * 60_000;
+const HEADLESS_MAX_SEC = 3600; // a headless job is stopped after an hour unless --max-time says otherwise
 
 function ctx(opts) {
   const env = opts.env ?? process.env;
@@ -247,16 +248,33 @@ export async function cmdDispatch(flags, opts = {}) {
     pick = { ...res.candidates[0], why: `routing ${res.profile.type}: ${res.candidates[0].why}` };
   }
   const prompt = flags['prompt-file'] ? readFileSync(flags['prompt-file'], 'utf8') : flags.prompt ?? null;
-  const cwd = resolve(flags.cwd ?? c.root);
+  const machine = flags.machine ?? null;
+  const backendChoice = flags.backend ?? (cfg.backend && cfg.backend !== 'auto' ? cfg.backend : null);
+  // herdr drives only the CLIs it recognizes: any other one runs headless there.
+  const autoHeadless = !flags.headless && !herdrKind(pick.harness) && Boolean(headlessOf(pick.harness)) && backendChoice !== 'hc';
+  const headless = Boolean(flags.headless) || autoHeadless;
+  if (headless && !headlessOf(pick.harness)) throw new HarmaError(`${pick.harness} non ha una modalità non interattiva nota a harma`);
+  if (headless && !prompt) throw new HarmaError('Un lavoro non interattivo parte con il suo compito: passa --prompt o --prompt-file');
+  if (machine) {
+    if (backendChoice === 'hc') throw new HarmaError('--machine funziona con il backend herdr');
+    if (headless) throw new HarmaError(`--machine non supporta i lavori non interattivi: ${autoHeadless ? `herdr non riconosce ${pick.harness} come agente` : 'togli --headless'}`);
+    if (!/^(\/|~)/.test(flags.cwd ?? '')) throw new HarmaError('--machine richiede --cwd con la cartella del progetto su quella macchina', { hint: 'Un percorso assoluto o che inizia con ~, es. --cwd ~/work/progetto' });
+  }
+  const cwd = machine ? flags.cwd : resolve(flags.cwd ?? c.root);
   const spec = launchSpec(pick, c.catalog);
   const binary = which(spec.argv[0], c.env);
-  if (!binary) {
+  if (!binary && !machine) {
     throw new HarmaError(`${spec.argv[0]} non è installato su questa macchina`, { hint: 'Vedi harma models per le CLI disponibili' });
   }
+  const hs = headless ? headlessSpec(pick.harness, spec) : null;
+  const notes = [...spec.notes];
+  if (autoHeadless) notes.push(`herdr non riconosce ${pick.harness} come agente: lavoro non interattivo, un compito e una risposta`);
+  if (machine) notes.push(`CLI e modelli non verificati su ${machine}: harma conosce solo quelli di questa macchina`);
   const plan = {
     agent: flags.name, task_type: flags['task-type'] ?? null,
     harness: pick.harness, model: pick.model, effort: pick.effort, why: pick.why,
-    cwd, argv: spec.argv, env: spec.env, notes: spec.notes,
+    cwd, argv: hs ? hs.argv : spec.argv, env: spec.env, notes,
+    mode: headless ? 'headless' : 'interactive', machine,
     prompt_chars: prompt?.length ?? 0, policy: cfg.dispatch_policy,
     layout: flags.worktree ? 'worktree' : (flags.layout ?? cfg.herdr?.layout ?? 'auto'),
     worktree: flags.worktree ? { branch: flags.branch ?? `harma/${flags.name}` } : null,
@@ -269,35 +287,59 @@ export async function cmdDispatch(flags, opts = {}) {
       'CONFERMA RICHIESTA — nessun agente è stato avviato.',
       `Motivo: ${gate.reason}`,
       `Agente ${plan.agent}: ${plan.harness}:${plan.model} @ ${plan.effort ?? 'default'} (${plan.why})`,
-      `Comando: ${plan.argv.join(' ')}${Object.keys(plan.env).length ? `  env ${JSON.stringify(plan.env)}` : ''}`,
-      `Dove: ${plan.worktree ? `worktree su branch ${plan.worktree.branch}` : `layout ${plan.layout}`} · fiducia nella cartella: ${plan.trust_project ? 'la dà harma (policy del progetto)' : 'la dà l\'utente'}`,
+      `Comando: ${plan.argv.join(' ')}${hs ? ` ${promptHint(hs.prompt)}` : ''}${Object.keys(plan.env).length ? `  env ${JSON.stringify(plan.env)}` : ''}`,
+      `Modo: ${headless ? 'non interattivo (un compito, una risposta; nessuno risponde alle richieste di permesso)' : 'interattivo'}${machine ? ` · macchina: ${machine}` : ''}`,
+      `Dove: ${plan.worktree ? `worktree su branch ${plan.worktree.branch}` : `layout ${plan.layout}`} · fiducia nella cartella: ${headless ? 'non serve' : machine ? 'la dà l\'utente (altra macchina)' : plan.trust_project ? 'la dà harma (policy del progetto)' : 'la dà l\'utente'}`,
       ...plan.notes.map((n) => `Nota: ${n}`),
       'Se l\'utente approva, ripeti lo stesso comando con --yes.',
     ].join('\n'));
     return { needsConfirmation: true, plan, exitCode: EXIT_NEEDS_CONFIRM };
   }
 
-  if (pick.harness === 'agy' && pick.model === AGY_NEON) {
+  if (pick.harness === 'agy' && pick.model === AGY_NEON && !machine) {
     const models = await agyModelIds(binary, c.env);
     if (!models.has(spec.modelId)) {
       throw new HarmaError(`agy models non espone ${spec.modelId}`, { hint: 'Verifica il livello e il piano Antigravity del tuo account' });
     }
   }
-  const backend = opts.backend ?? await selectBackend({ choice: flags.backend, config: cfg, env: c.env });
+  const backend = opts.backend ?? await selectBackend({ choice: machine ? 'herdr' : flags.backend, config: cfg, env: c.env, machine });
   const project = projectId(c.root);
   const startedMs = Date.now();
   if (plan.worktree && backend.name !== 'herdr') throw new HarmaError('--worktree richiede il backend herdr');
-  const started = await backend.start({
-    name: flags.name, cwd, argv: spec.argv, env: spec.env, harness: pick.harness, root: c.root, project,
-    layout: plan.layout === 'worktree' ? undefined : plan.layout, worktree: plan.worktree,
-  });
-  if (started.workspaceCreated) { cfg.herdr = { ...(cfg.herdr ?? {}), workspace_id: started.workspace }; saveConfig(c.root, cfg); }
+  const layout = plan.layout === 'worktree' ? undefined : plan.layout;
+  let runDir = null;
+  let started;
+  if (headless) {
+    runDir = statePath(c.root, 'runs', `${flags.name}-${now().replace(/[:.]/g, '-')}`);
+    mkdirSync(runDir, { recursive: true });
+    ensureGitignore(c.root);
+    const promptFile = join(runDir, 'prompt.md');
+    writeFileSync(promptFile, prompt);
+    const job = {
+      name: flags.name, harness: pick.harness, model: pick.model, argv: hs.argv, env: spec.env,
+      prompt: hs.prompt, prompt_file: promptFile, run_dir: runDir, cwd: null,
+      report: backend.name === 'herdr', keep_alive: backend.name === 'herdr',
+      session_id: spec.sessionId, resume_argv: resumeArgv(pick.harness, spec.sessionId),
+      session_pattern: hs.sessionPattern?.source ?? null, timeout_sec: Number(flags['max-time'] ?? HEADLESS_MAX_SEC),
+    };
+    const jobFile = join(runDir, 'job.json');
+    writeFileSync(jobFile, JSON.stringify(job, null, 2) + '\n');
+    started = await backend.startHeadless({
+      name: flags.name, cwd, root: c.root, project, layout, worktree: plan.worktree, command: [process.execPath, BIN, '_run', jobFile],
+    });
+  } else {
+    started = await backend.start({
+      name: flags.name, cwd, argv: spec.argv, env: spec.env, harness: pick.harness, root: c.root, project, layout, worktree: plan.worktree,
+    });
+  }
+  rememberWorkspace(c, cfg, started);
   const agentCwd = started.cwd ?? cwd;
   appendEvent(c.root, {
     type: 'started', agent: flags.name, harness: pick.harness, model: pick.model, effort: pick.effort,
-    task_type: flags['task-type'] ?? null, backend: backend.name, target: targetOf(started),
+    task_type: flags['task-type'] ?? null, backend: backend.name, target: targetOf(started), mode: plan.mode, run_dir: runDir,
     cwd: agentCwd, worktree: started.worktree ?? null, session_id: spec.sessionId, why: pick.why, confirmed_by: gate.by, started_ms: startedMs,
   });
+  if (headless) return headlessStarted(c, flags, { plan, started, pick, backend, runDir, sid: spec.sessionId, prompt, pollMs: opts.pollMs });
   const trusted = await maybeTrust(c, cfg, backend, { agent: flags.name, harness: pick.harness, cwd: agentCwd, started });
   let sid = spec.sessionId ?? await discoverSession(backend, { name: started.target, harness: pick.harness, cwd: agentCwd, sinceMs: startedMs, env: c.env });
   if (sid && sid !== spec.sessionId) appendEvent(c.root, { type: 'session', agent: flags.name, session_id: sid, source: backend.name });
@@ -336,11 +378,57 @@ export async function cmdDispatch(flags, opts = {}) {
 function targetOf(started) {
   return {
     name: started.target, tab: started.tab ?? null, pane: started.pane ?? null, address: started.address ?? null,
-    layout: started.layout ?? null, workspace: started.workspace ?? null,
+    layout: started.layout ?? null, workspace: started.workspace ?? null, machine: started.machine ?? null,
   };
 }
 
+/** A workspace harma just created: remember it, per machine, so the next agents join it. */
+function rememberWorkspace(c, cfg, started) {
+  if (!started.workspaceCreated) return;
+  cfg.herdr = { ...(cfg.herdr ?? {}) };
+  if (started.machine) cfg.herdr.machines = { ...(cfg.herdr.machines ?? {}), [started.machine]: { workspace_id: started.workspace } };
+  else cfg.herdr.workspace_id = started.workspace;
+  saveConfig(c.root, cfg);
+}
+
+const promptHint = (p) => (p.via === 'stdin' ? '< prompt.md' : p.via === 'file' ? `${p.flag} prompt.md` : `${p.flag} "<compito>"`);
+
+/** A headless job's result.json, once the runner has finished. */
+function runResult(a) {
+  return a.run_dir ? readJson(join(a.run_dir, 'result.json')) : null;
+}
+
+function resultLabel(r) {
+  if (r.error) return `non partito: ${r.error}`;
+  if (r.timed_out) return 'fermato (tempo massimo)';
+  return r.exit_code === 0 ? 'done' : `errore (exit ${r.exit_code ?? r.signal})`;
+}
+
+/** After a headless start: optionally wait for the answer, then report. */
+async function headlessStarted(c, flags, { plan, started, pick, backend, runDir, sid, prompt, pollMs = 1000 }) {
+  let result = null;
+  if (flags.wait) {
+    const deadline = Date.now() + Number(flags.timeout ?? 600) * 1000;
+    while (!(result = runResult({ run_dir: runDir })) && Date.now() < deadline) await new Promise((r) => setTimeout(r, pollMs));
+  }
+  appendEvent(c.root, { type: 'prompted', agent: flags.name, chars: prompt.length });
+  if (result?.session_id && result.session_id !== sid) appendEvent(c.root, { type: 'session', agent: flags.name, session_id: result.session_id, source: 'harma _run' });
+  const output = join(runDir, 'output.md');
+  const answer = result ? readFileSync(output, 'utf8') : null;
+  const data = { started: true, plan, target: started, mode: 'headless', session_id: result?.session_id ?? sid ?? null, output, result, answer, exitCode: 0 };
+  emit(c, flags, data, () => [
+    `Avviato ${flags.name} (non interattivo): ${pick.harness}:${pick.model} @ ${pick.effort ?? 'default'} su ${backend.name} (${where(started)})`,
+    ...(started.worktree ? [`Worktree: ${started.worktree.path} (branch ${started.worktree.branch})`] : []),
+    `Compito inviato (${prompt.length} caratteri). Risposta in ${output}`,
+    ...(flags.wait ? [result ? `Esito: ${resultLabel(result)}` : `Ancora in corso dopo ${flags.timeout ?? 600} s: leggi più tardi con harma read ${flags.name}`] : [`Leggi la risposta con: harma read ${flags.name}`]),
+    ...plan.notes.map((n) => `Nota: ${n}`),
+    ...(answer !== null ? ['', answer.trimEnd()] : []),
+  ].join('\n'));
+  return data;
+}
+
 function where(started) {
+  if (started.machine) return `tab ${started.tab} su ${started.machine}`;
   if (started.layout === 'split') return `pane ${started.pane} accanto all'orchestratore`;
   if (started.layout === 'tab') return `tab ${started.tab} nel workspace dell'orchestratore`;
   if (started.layout === 'worktree') return `tab ${started.tab} nel workspace del worktree`;
@@ -353,7 +441,7 @@ function where(started) {
  * agent's own worktree. Returns null when nothing was attempted.
  */
 async function maybeTrust(c, cfg, backend, { agent, harness, cwd, started }) {
-  if (!started.blocked || !cfg.trust_project || typeof backend.answerTrust !== 'function') return null;
+  if (!started.blocked || !cfg.trust_project || started.machine || typeof backend.answerTrust !== 'function') return null;
   const res = trustableFolder(cwd, c.root, started.worktree?.path)
     ? await backend.answerTrust({ target: started.target, harness, cwd })
     : { ok: false, detail: `${cwd} è fuori dal progetto` };
@@ -382,7 +470,8 @@ async function discoverSession(backend, { name, harness, cwd, sinceMs, env }) {
       if (live?.sessionId) return live.sessionId;
     } catch { /* fall through */ }
   }
-  if (harness === 'codex') return findCodexSession({ env, cwd, sinceMs });
+  // Codex's own logs are on this machine: no use for an agent on another one.
+  if (harness === 'codex' && !backend.machine) return findCodexSession({ env, cwd, sinceMs });
   return null;
 }
 
@@ -393,6 +482,11 @@ export async function cmdSend(flags, opts = {}) {
   const [name, ...rest] = flags._;
   const text = flags['prompt-file'] ? readFileSync(flags['prompt-file'], 'utf8') : rest.join(' ');
   const agent = openAgent(c, name);
+  if (agent.mode === 'headless') {
+    throw new HarmaError(`${name} è un lavoro non interattivo: ha già il suo compito e non riceve altri messaggi`, {
+      hint: `Leggi la risposta con harma read ${name}; per continuare la conversazione: harma cleanup --agent ${name}, poi harma resume ${name}`,
+    });
+  }
   if (!text) throw new HarmaError('Manca il testo da inviare');
   const gate = await dispatchGate(c, cfg, agent.harness, flags, opts);
   if (!gate.allowed) {
@@ -411,9 +505,21 @@ export async function cmdRead(flags, opts = {}) {
   const c = ctx(opts);
   const cfg = loadConfig(c.root, { required: true });
   const agent = openAgent(c, flags._[0]);
+  if (agent.mode === 'headless') return readHeadless(c, flags, agent);
   const backend = opts.backend ?? backendFor(agent, cfg, c.env);
   const text = await backend.read(agent.target?.name ?? agent.name, Number(flags.lines ?? 120));
   c.out(text);
+  return text;
+}
+
+/** A headless job's answer: the whole file, or its last --lines lines. */
+function readHeadless(c, flags, agent) {
+  const result = runResult(agent);
+  let text = '';
+  try { text = readFileSync(join(agent.run_dir, 'output.md'), 'utf8'); } catch { /* not written yet */ }
+  if (flags.lines) text = text.split('\n').slice(-Number(flags.lines)).join('\n');
+  const head = result ? `(${agent.name}: ${resultLabel(result)})` : `(${agent.name}: in corso, risposta parziale)`;
+  c.out(`${head}\n${text}`);
   return text;
 }
 
@@ -425,8 +531,20 @@ function openAgent(c, name) {
   return a;
 }
 
+/** The backend that drives a registered agent: its own, on its machine. */
 function backendFor(agent, cfg, env) {
-  return agent.backend === 'hc' ? new HcBackend({ env }) : new HerdrBackend({ env, config: cfg });
+  return agent.backend === 'hc' ? new HcBackend({ env }) : new HerdrBackend({ env, config: cfg, machine: agent.target?.machine ?? null });
+}
+
+/** Agents on one backend and machine share one live listing. */
+const liveKey = (a) => (a.target?.machine ? `${a.backend}@${a.target.machine}` : a.backend);
+
+/** Live status: a finished headless job reports its result, whatever its terminal says. */
+function statusOf(a, live) {
+  const r = a.mode === 'headless' ? runResult(a) : null;
+  if (r) return resultLabel(r);
+  const l = findLive(a, live[liveKey(a)]);
+  return l ? (l.status ?? 'nessuno stato') : (live[liveKey(a)] ? 'non trovato' : 'backend non raggiungibile');
 }
 
 // 6 ─ monitoring ───────────────────────────────────────────────────────────
@@ -436,15 +554,16 @@ export async function cmdStatus(flags, opts = {}) {
   const agents = agentsFromEvents(readEvents(c.root));
   const live = await liveByBackend(c, cfg, agents, opts);
   const rows = agents.filter((a) => flags.all || a.state === 'open').map((a) => {
-    const l = findLive(a, live[a.backend]);
+    const l = findLive(a, live[liveKey(a)]);
     return {
       agente: a.name,
       modello: `${a.harness}:${a.model}`,
       effort: a.effort,
       lavoro: a.task_type,
+      modo: a.mode === 'headless' ? 'non interattivo' : 'interattivo',
       registro: a.state === 'open' ? 'aperto' : 'chiuso',
-      stato: a.state === 'closed' ? '—' : (l ? (l.status ?? 'nessuno stato') : (live[a.backend] ? 'non trovato' : 'backend non raggiungibile')),
-      backend: `${a.backend} ${a.target?.tab ?? a.target?.address ?? ''}`.trim(),
+      stato: a.state === 'closed' ? '—' : statusOf(a, live),
+      backend: `${liveKey(a)} ${a.target?.tab ?? a.target?.address ?? ''}`.trim(),
       da: a.started_at ? ago(a.started_at) : null,
       sessione: a.session_id ? a.session_id.slice(0, 8) + '…' : (l?.sessionId ? l.sessionId.slice(0, 8) + '…' : null),
     };
@@ -459,10 +578,11 @@ export async function cmdStatus(flags, opts = {}) {
 
 async function liveByBackend(c, cfg, agents, opts) {
   const out = {};
-  const used = new Set(agents.filter((a) => a.state === 'open').map((a) => a.backend));
-  for (const name of used) {
-    const b = opts.backend?.name === name ? opts.backend : (name === 'hc' ? new HcBackend({ env: c.env }) : new HerdrBackend({ env: c.env, config: cfg }));
-    try { out[name] = await b.list(projectId(c.root)); } catch { out[name] = null; }
+  for (const a of agents.filter((x) => x.state === 'open')) {
+    const key = liveKey(a);
+    if (key in out) continue;
+    const b = opts.backend?.name === a.backend && (opts.backend.machine ?? null) === (a.target?.machine ?? null) ? opts.backend : backendFor(a, cfg, c.env);
+    try { out[key] = await b.list(projectId(c.root)); } catch { out[key] = null; }
   }
   return out;
 }
@@ -497,10 +617,14 @@ export async function cmdCosts(flags, opts = {}) {
   // An open agent's id may be known to the backend before harma records it.
   const live = await liveByBackend(c, cfg, agents.filter((a) => !a.session_id), opts);
   for (const a of agents) {
-    if (!a.session_id && a.state === 'open') a.session_id = findLive(a, live[a.backend])?.sessionId ?? null;
+    if (!a.session_id && a.state === 'open') a.session_id = findLive(a, live[liveKey(a)])?.sessionId ?? null;
   }
   const perAgent = [];
   for (const a of agents) {
+    if (a.target?.machine) {
+      perAgent.push({ agente: a.name, modello: `${a.harness}:${a.model}`, token: null, stima: null, nota: `log su ${a.target.machine}, non su questa macchina` });
+      continue;
+    }
     if (!a.session_id || !meta(a.harness).logs) {
       perAgent.push({ agente: a.name, modello: `${a.harness}:${a.model}`, token: null, stima: null, nota: a.session_id ? `nessun log locale per ${a.harness}` : 'id di sessione non ancora noto' });
       continue;
@@ -558,17 +682,19 @@ export async function cmdCleanup(flags, opts = {}) {
   const live = await liveByBackend(c, cfg, agents, opts);
   const report = [];
   for (const a of agents) {
-    const l = findLive(a, live[a.backend]);
-    const status = l?.status ?? (live[a.backend] ? 'non trovato' : 'backend non raggiungibile');
-    if (!live[a.backend]) { report.push({ agente: a.name, azione: 'saltato', motivo: status }); continue; }
+    const l = findLive(a, live[liveKey(a)]);
+    const result = a.mode === 'headless' ? runResult(a) : null;
+    const status = result ? resultLabel(result) : (l?.status ?? (live[liveKey(a)] ? 'non trovato' : 'backend non raggiungibile'));
+    if (!live[liveKey(a)]) { report.push({ agente: a.name, azione: 'saltato', motivo: status }); continue; }
     if (['working', 'blocked'].includes(status) && !flags.force) {
       report.push({ agente: a.name, azione: 'tenuto', motivo: status === 'working' ? 'sta lavorando' : 'aspetta una risposta (blocked): leggilo con harma read' });
       continue;
     }
-    let sid = a.session_id ?? l?.sessionId ?? null;
-    let source = a.session_id ? 'registro' : (l?.sessionId ? a.backend : null);
-    if (!sid && a.harness === 'codex') { sid = findCodexSession({ env: c.env, cwd: a.cwd, sinceMs: Date.parse(a.started_at) }); source = sid ? 'log codex' : null; }
-    if (!sid && !flags.force && status !== 'non trovato') {
+    let sid = a.session_id ?? result?.session_id ?? l?.sessionId ?? null;
+    let source = a.session_id ? 'registro' : result?.session_id ? 'harma _run' : (l?.sessionId ? a.backend : null);
+    if (!sid && a.harness === 'codex' && !a.target?.machine) { sid = findCodexSession({ env: c.env, cwd: a.cwd, sinceMs: Date.parse(a.started_at) }); source = sid ? 'log codex' : null; }
+    // A finished headless job keeps its answer on disk: no session is needed to close it.
+    if (!sid && !flags.force && status !== 'non trovato' && !result) {
       report.push({ agente: a.name, azione: 'tenuto', motivo: 'id di sessione non trovato: chiudendo si perde il contesto (usa --force per chiudere comunque)' });
       continue;
     }
@@ -580,19 +706,29 @@ export async function cmdCleanup(flags, opts = {}) {
       closed = await b.close({ ...(a.target ?? {}), target: a.target?.name ?? a.name });
     }
     if (closed.ok) appendEvent(c.root, { type: 'closed', agent: a.name, session_id: sid, last_status: status });
-    const kept = closed.ok && a.worktree ? ` · worktree lasciato in ${a.worktree.path} (branch ${a.worktree.branch}): integra il lavoro, poi git worktree remove` : '';
+    const kept = (closed.ok && a.worktree ? ` · worktree lasciato in ${a.worktree.path} (branch ${a.worktree.branch}): integra il lavoro, poi git worktree remove` : '')
+      + (closed.ok && a.run_dir ? ` · risposta in ${join(a.run_dir, 'output.md')}` : '');
     report.push({ agente: a.name, azione: closed.ok ? 'chiuso' : 'errore', motivo: closed.detail + kept, sessione: sid });
   }
-  // --workspace: close harma's own herdr workspace once no harma agent is open.
-  if (flags.workspace && !flags['dry-run'] && cfg.herdr?.workspace_id) {
-    const stillOpen = agentsFromEvents(readEvents(c.root)).filter((a) => a.state === 'open');
-    if (stillOpen.length) {
-      report.push({ agente: '(workspace)', azione: 'tenuto', motivo: `agenti ancora aperti: ${stillOpen.map((a) => a.name).join(', ')}` });
-    } else {
-      const b = opts.backend?.name === 'herdr' ? opts.backend : new HerdrBackend({ env: c.env, config: cfg });
-      const res = await b.closeWorkspace(cfg.herdr.workspace_id);
-      if (res.ok) { delete cfg.herdr.workspace_id; saveConfig(c.root, cfg); }
-      report.push({ agente: '(workspace)', azione: res.ok ? 'chiuso' : 'errore', motivo: res.detail });
+  // --workspace: close harma's own herdr workspaces (here and on each machine) once no harma agent is open there.
+  if (flags.workspace && !flags['dry-run']) {
+    const open = agentsFromEvents(readEvents(c.root)).filter((a) => a.state === 'open' && a.backend === 'herdr');
+    const spaces = [
+      ...(cfg.herdr?.workspace_id ? [{ machine: null, id: cfg.herdr.workspace_id }] : []),
+      ...Object.entries(cfg.herdr?.machines ?? {}).filter(([, v]) => v?.workspace_id).map(([m, v]) => ({ machine: m, id: v.workspace_id })),
+    ];
+    for (const sp of spaces) {
+      const label = sp.machine ? `(workspace su ${sp.machine})` : '(workspace)';
+      const here = open.filter((a) => (a.target?.machine ?? null) === sp.machine);
+      if (here.length) { report.push({ agente: label, azione: 'tenuto', motivo: `agenti ancora aperti: ${here.map((a) => a.name).join(', ')}` }); continue; }
+      const b = opts.backend?.name === 'herdr' && (opts.backend.machine ?? null) === sp.machine ? opts.backend : new HerdrBackend({ env: c.env, config: cfg, machine: sp.machine });
+      const res = await b.closeWorkspace(sp.id);
+      if (res.ok) {
+        if (sp.machine) delete cfg.herdr.machines[sp.machine];
+        else delete cfg.herdr.workspace_id;
+        saveConfig(c.root, cfg);
+      }
+      report.push({ agente: label, azione: res.ok ? 'chiuso' : 'errore', motivo: res.detail });
     }
   }
   emit(c, flags, { report }, () => [
@@ -626,9 +762,10 @@ export async function cmdResume(flags, opts = {}) {
     ].join('\n').trim());
     return { needsConfirmation: !gate.allowed, argv, exitCode: gate.allowed ? 0 : EXIT_NEEDS_CONFIRM };
   }
-  const backend = opts.backend ?? await selectBackend({ choice: flags.backend ?? a.backend, config: cfg, env: c.env });
-  const started = await backend.start({ name, cwd: a.cwd, argv, env: spec.env, harness: a.harness, root: c.root, project: projectId(c.root), layout: flags.layout ?? cfg.herdr?.layout ?? 'auto' });
-  if (started.workspaceCreated) { cfg.herdr = { ...(cfg.herdr ?? {}), workspace_id: started.workspace }; saveConfig(c.root, cfg); }
+  const machine = a.target?.machine ?? null;
+  const backend = opts.backend ?? await selectBackend({ choice: machine ? 'herdr' : flags.backend ?? a.backend, config: cfg, env: c.env, machine });
+  const started = await backend.start({ name, cwd: a.cwd, argv, env: spec.env, harness: a.harness, root: c.root, project: projectId(c.root), layout: machine ? undefined : flags.layout ?? cfg.herdr?.layout ?? 'auto' });
+  rememberWorkspace(c, cfg, started);
   appendEvent(c.root, { type: 'resumed', agent: name, session_id: a.session_id, backend: backend.name, target: targetOf(started), confirmed_by: gate.by });
   const trusted = await maybeTrust(c, cfg, backend, { agent: name, harness: a.harness, cwd: a.cwd, started: { ...started, worktree: a.worktree } });
   c.out(flags.json ? JSON.stringify({ resumed: true, argv, trust: trusted }) : `Ripreso ${name} (sessione ${a.session_id}) su ${backend.name} (${where(started)}).`);
@@ -756,7 +893,5 @@ async function openSelect(c, cfg, flags, opts) {
   }
   throw new HarmaError(`Nessuna risposta dalla selezione entro ${timeoutMs / 1000}s`, { hint: 'Il tab resta aperto: riprova con harma select --show più tardi' });
 }
-
-const shq = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
 
 export { DEFAULT_CONFIG, taskProfile };

@@ -2,10 +2,11 @@ import {
   cmdInit, cmdModels, cmdCredits, cmdRank, cmdRoute, cmdDispatch, cmdSend, cmdRead,
   cmdStatus, cmdCosts, cmdCleanup, cmdResume, cmdSelect, cmdTrust,
 } from './commands.mjs';
+import { cmdRun } from './run.mjs';
 import { cmdInstall, cmdUninstall, cmdDoctor } from './install.mjs';
 import { HarmaError } from './util.mjs';
 
-const BOOLEAN = new Set(['json', 'yes', 'wait', 'refresh', 'dry-run', 'force', 'all', 'print-only', 'help', 'version', 'workspace', 'open', 'accept', 'show', 'close-tab', 'worktree', 'trust-project']);
+const BOOLEAN = new Set(['json', 'yes', 'wait', 'refresh', 'dry-run', 'force', 'all', 'print-only', 'help', 'version', 'workspace', 'open', 'accept', 'show', 'close-tab', 'worktree', 'trust-project', 'headless']);
 
 export function parseArgs(argv) {
   const flags = { _: [] };
@@ -30,7 +31,7 @@ Uso: harma <comando> [opzioni]   (--json su ogni comando per output leggibile da
 
 Progetto
   init --orchestrator <harness>:<model> --effort <level> [--backend auto|herdr|hc] [--policy confirm|auto-within-budget]
-       [--layout auto|workspace|tab|split[:down]] [--trust-project]
+       [--layout auto|workspace|tab|split[:right|:down]] [--trust-project]
   trust [on|off]                 harma risponde (on) o no (off) al dialogo "fidati della cartella" degli agenti
 
 Conoscere le risorse
@@ -47,11 +48,15 @@ Scegliere i modelli (l'utente valida o cambia le proposte)
 
 Delegare (con policy "confirm" serve --yes, dopo il consenso dell'utente)
   dispatch --name <n> (--model h:m [--effort e] | --task-type <tipo>) [--prompt "…" | --prompt-file f] [--wait] [--yes]
-           [--layout auto|workspace|tab|split[:down]] [--worktree [--branch b]]
-                                 layout auto: dentro herdr un tab nel workspace dell'orchestratore,
-                                 fuori un workspace per progetto; --worktree: checkout git separato
+           [--layout auto|workspace|tab|split[:right|:down]] [--worktree [--branch b]]
+           [--headless [--max-time s]] [--machine <macchina herdr> --cwd <cartella là>]
+                                 layout auto: dentro herdr un pane accanto all'orchestratore finché c'è
+                                 spazio, poi un tab; fuori un workspace per progetto
+                                 --worktree: checkout git separato
+                                 --headless: un compito, una risposta (modo print della CLI), in un pane
+                                 --machine: l'agente gira sul server herdr di un'altra macchina
   send <nome> "<testo>" [--wait] [--yes]
-  read <nome> [--lines N]
+  read <nome> [--lines N]        schermo dell'agente; per un lavoro non interattivo, la sua risposta
 
 Sorvegliare
   status [--all]                 stato di ogni agente aperto
@@ -71,6 +76,7 @@ const COMMANDS = {
   init: cmdInit, models: cmdModels, credits: cmdCredits, rank: cmdRank, route: cmdRoute,
   dispatch: cmdDispatch, send: cmdSend, read: cmdRead, status: cmdStatus, costs: cmdCosts,
   cleanup: cmdCleanup, resume: cmdResume, select: cmdSelect, trust: cmdTrust, install: cmdInstall, uninstall: cmdUninstall, doctor: cmdDoctor,
+  _run: cmdRun, // internal: the runner of a headless job, typed by harma into its terminal
 };
 
 export async function main(argv, opts = {}) {

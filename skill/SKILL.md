@@ -77,7 +77,13 @@ harma dispatch --name <agent-name> --task-type <job> --prompt-file <brief.md> --
 
 With `--task-type` and no `--model`, harma uses the user's list for that job, otherwise the top route candidate. The plan's `why` says which model on the list it took and which it skipped (for example "n.1 … saltato: crediti scarso"). Tell the user when it isn't their first choice. Use `--model <harness>:<model> --effort <level>` only when the user asked for that model.
 
-Where the agent opens: when you run inside herdr, harma opens it as a tab in your own workspace, so the user sees it next to you; outside herdr, in the project workspace `harma:<project>`. Add `--layout split` to put it in a pane beside yours, when the user wants to watch it. For agents that write code in parallel, add `--worktree`: the agent gets its own git checkout on branch `harma/<name>`, so builders don't overwrite each other. Review and merge that branch yourself; harma never deletes a worktree.
+Where the agent opens: when you run inside herdr, harma opens it in a pane beside yours while both stay usable, then as a tab in your own workspace, so the user sees it next to you; outside herdr, in the project workspace `harma:<project>`. `--layout tab` or `--layout split` force one or the other. For agents that write code in parallel, add `--worktree`: the agent gets its own git checkout on branch `harma/<name>`, so builders don't overwrite each other. Don't use a worktree for reviews or research: it starts from the last commit, so it can't see uncommitted work, and it lacks untracked files such as `.env` and `node_modules`. Review and merge that branch yourself; harma never deletes a worktree that holds work.
+
+How the agent runs:
+
+- **Interactive** (default): a session you can send more work to, read and resume.
+- **`--headless`**: one task, one answer, in the CLI's print mode. Use it for extraction, research, or a review whose answer you only need to read. `--wait` prints the answer; otherwise read it with `harma read <name>`. It can't receive more messages. Nobody answers permission requests, so don't use it for work that must write files or run commands. CLIs herdr doesn't drive (`mmx`, `vibe`) always run this way.
+- **`--machine <name> --cwd <folder>`**: the agent runs on another machine's herdr (one listed by `herdr machine list`). Use it only when the user asks for that machine. harma can't check the CLIs there, and the user answers any trust dialog.
 
 Name agents in lowercase, unique among open agents (`planner`, `builder`, `review-1`). Write a self-contained brief: the goal, the files, the constraints, what "done" means, and how to report back, for example "write your result to `.harma/out/<name>.md`". The agent starts with none of your context, so anything you leave out of the brief it will guess.
 
