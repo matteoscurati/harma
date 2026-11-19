@@ -26,7 +26,11 @@ harma knows it runs inside herdr from the variables herdr sets in each pane (`HE
 
 `dispatch --worktree` gives the agent its own git checkout, so agents that write code in parallel don't overwrite each other. herdr creates the worktree on branch `harma/agent_name` (or `--branch`), under its worktrees folder, and opens it as a workspace grouped with the project's in the sidebar. The agent works there; the orchestrator reviews the branch and merges it.
 
-harma never deletes a worktree, because it holds the agent's work. `cleanup` closes the agent and prints where the checkout is; remove it with `git worktree remove` once the work is merged.
+harma never deletes a worktree, because it holds the agent's work. `cleanup` closes the agent and prints where the checkout is; remove it with `git worktree remove` once the work is merged. The one exception is a worktree whose agent did not start: nothing has worked there yet, so harma asks herdr to remove the checkout (never forced) and keeps the branch, and the same dispatch can run again.
+
+### When the shell is still starting
+
+herdr starts an agent only in a pane whose shell is at its prompt. A new pane, above all in a new worktree, can spend a few seconds in its startup files (`.zshrc`, git or node hooks), and herdr answers `agent_pane_busy` meanwhile, before starting anything. harma repeats the start for up to 20 seconds; if the shell is still busy, it reports the error and nothing is started.
 
 ## Folder trust
 

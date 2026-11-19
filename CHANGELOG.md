@@ -2,6 +2,13 @@
 
 All notable changes to harma, newest first. Versions follow [semantic versioning](https://semver.org/).
 
+## 0.3.2 (2026-11-19)
+
+Fixes for agents in herdr:
+
+- **Shell still starting**: `dispatch` failed with `herdr agent start fallito: pane … is not an available shell` when the new pane's shell had not reached its prompt yet, which happens most often in a new worktree. herdr refuses that start without launching anything, so harma now repeats it for up to 20 seconds and starts the agent as soon as the shell is ready
+- **Worktree left behind**: when the agent of a `--worktree` dispatch did not start, its empty checkout stayed on disk and the same dispatch then failed with "already exists". harma now asks herdr to remove that checkout (never forced) and keeps the branch
+
 ## 0.3.1 (2026-11-19)
 
 New model:

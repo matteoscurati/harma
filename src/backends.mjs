@@ -52,6 +52,8 @@ export class HerdrBackend {
     this.config = config; // project config (holds herdr.workspace_id)
     this.trustPolls = 30; // after answering a trust dialog: up to 30 × 500 ms
     this.trustPollMs = 500;
+    this.shellWaitMs = 20_000; // a new pane's shell may still be starting: retry agent start this long
+    this.shellPollMs = 250;
   }
 
   exec(args, opts = {}) { return run(this.bin, args, { env: this.env, ...opts }); }
@@ -170,13 +172,18 @@ export class HerdrBackend {
       : await this.place({ layout, root, project, cwd, label: name, env });
     const startArgs = ['agent', 'start', name, '--kind', kind, '--pane', at.paneId, '--timeout', '60000'];
     if (argv.length > 1) startArgs.push('--', ...argv.slice(1));
-    const started = await this.exec(startArgs, { timeout: 90_000 });
+    const started = await this.startWhenShellReady(startArgs);
     let blocked = false;
     if (!started.ok) {
-      const err = parseJson(started.stderr);
+      const code = parseJson(started.stderr)?.error?.code;
       // agent_not_ready keeps the agent: it is blocked at startup (e.g. trust dialog).
-      if (err?.error?.code !== 'agent_not_ready') {
-        await this.close({ tab: at.tabId, pane: at.paneId, layout: at.layout, target: name });
+      if (code !== 'agent_not_ready') {
+        await this.discard(at, name);
+        if (code === 'agent_pane_busy') {
+          throw new HarmaError(`herdr agent start: la shell del pane non è arrivata al prompt entro ${this.shellWaitMs / 1000} s; nessun agente è stato avviato`, {
+            hint: `Apri una tab in ${at.worktree?.path ?? cwd} e guarda cosa fa la shell all'avvio (.zshrc, hook di git o di node), poi riprova`,
+          });
+        }
         okJson(started, 'herdr agent start');
       }
       blocked = true;
@@ -185,6 +192,34 @@ export class HerdrBackend {
       target: name, tab: at.tabId, pane: at.paneId, layout: at.layout, workspace: at.workspace,
       workspaceCreated: at.workspaceCreated, cwd: at.worktree?.path ?? cwd, worktree: at.worktree ?? null, blocked,
     };
+  }
+
+  /**
+   * `agent start` needs the pane's shell at its prompt. A new pane, above all
+   * in a new worktree, may still be running its startup files: herdr then
+   * answers agent_pane_busy without starting anything, so the same call is
+   * repeated until the shell is ready or shellWaitMs runs out.
+   */
+  async startWhenShellReady(args) {
+    const deadline = Date.now() + this.shellWaitMs;
+    for (;;) {
+      const res = await this.exec(args, { timeout: 90_000 });
+      if (res.ok || parseJson(res.stderr)?.error?.code !== 'agent_pane_busy' || Date.now() >= deadline) return res;
+      await sleep(this.shellPollMs);
+    }
+  }
+
+  /**
+   * Undo a placement whose agent did not start. A worktree harma just created
+   * holds no work yet: herdr removes the checkout (never forced, so a changed
+   * one stays) and keeps the branch, so the same dispatch can run again.
+   */
+  async discard(at, name) {
+    if (at.layout === 'worktree') {
+      const res = await this.exec(['worktree', 'remove', '--workspace', at.workspace]);
+      if (res.ok) return;
+    }
+    await this.close({ tab: at.tabId, pane: at.paneId, layout: at.layout, target: name });
   }
 
   /**

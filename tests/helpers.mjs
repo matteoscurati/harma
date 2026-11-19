@@ -45,12 +45,26 @@ if (g === 'pane' && c === 'split') {
 if (g === 'pane' && c === 'rename') { h.labels = { ...h.labels, [a[2]]: a[3] }; return ok({ pane: { pane_id: a[2] } }); }
 if (g === 'pane' && c === 'close') { h.agents = h.agents.filter((x) => x.pane_id !== a[2]); h.closedPanes = [...(h.closedPanes ?? []), a[2]]; return ok({ closed: a[2] }); }
 if (g === 'worktree' && c === 'create') {
+  const path = arg('--cwd') + '-wt/' + arg('--branch').split('/').join('-');
+  if ((h.worktrees ?? []).some((x) => x.path === path)) return fail('worktree_create_failed', "fatal: '" + path + "' already exists");
   h.ws++; const w = 'w' + h.ws; h.open.push(w); h.tabs[w + ':t0'] = w; h.labels = { ...h.labels, [w + ':t0']: '1' };
-  const path = arg('--cwd') + '-wt/' + arg('--branch').split('/').join('-'); h.paneCwd[w + ':p0'] = path;
-  h.worktrees = [...(h.worktrees ?? []), { path, branch: arg('--branch'), label: arg('--label') }];
+  h.paneCwd[w + ':p0'] = path;
+  h.worktrees = [...(h.worktrees ?? []), { path, branch: arg('--branch'), label: arg('--label'), ws: w }];
   return ok({ type: 'worktree_created', workspace: { workspace_id: w, label: arg('--label') }, tab: { tab_id: w + ':t0' }, root_pane: { pane_id: w + ':p0', tab_id: w + ':t0' }, worktree: { path, branch: arg('--branch') } });
 }
+// Like herdr: removes the checkout and closes its workspace; the branch stays.
+if (g === 'worktree' && c === 'remove') {
+  const w = arg('--workspace'); const wt = (h.worktrees ?? []).find((x) => x.ws === w);
+  if (!wt || !h.open.includes(w)) return fail('workspace_not_found', 'workspace ' + w + ' not found');
+  for (const t of Object.keys(h.tabs)) if (h.tabs[t] === w) closeTab(t);
+  h.worktrees = h.worktrees.filter((x) => x !== wt); h.removedWorktrees = [...(h.removedWorktrees ?? []), wt.path];
+  return ok({ type: 'worktree_removed', path: wt.path, workspace_id: w });
+}
 if (g === 'pane' && c === 'run') return ok({ queued: true });
+// FAKE_PANE_BUSY=n: the pane's shell is still starting for the first n agent start calls.
+if (g === 'agent' && c === 'start' && (h.startCalls = (h.startCalls ?? 0) + 1) <= Number(process.env.FAKE_PANE_BUSY ?? 0)) {
+  return fail('agent_pane_busy', 'agent target pane ' + arg('--pane') + ' is not an available shell');
+}
 if (g === 'tab' && c === 'close') { closeTab(a[2]); return ok({ closed: a[2] }); }
 if (g === 'agent' && c === 'start') {
   const pane = a[a.indexOf('--pane') + 1];
