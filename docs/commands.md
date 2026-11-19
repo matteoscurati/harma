@@ -15,11 +15,13 @@ Model targets are written `harness:model`, where the harness is the CLI that run
 - `--backend auto|herdr|hc`: terminal backend; `auto` (default) uses herdr when it runs, otherwise `hc`
 - `--policy confirm|auto-within-budget`: dispatch policy; `confirm` is the default, see [consent](how-harma-decides.md#consent)
 - `--layout auto|workspace|tab|split[:right|:down]`: where herdr agents open by default; see [where agents open](agents-and-sessions.md#where-agents-open)
-- `--trust-project`: harma answers the folder-trust dialog of the agents it starts; see [folder trust](agents-and-sessions.md#folder-trust)
+- `--trust-project`: sets the trust policy to `on`: harma also answers the folder-trust dialog for the project folder; see [folder trust](agents-and-sessions.md#folder-trust)
+- `--worktree-copy ".env,…"`: untracked files to copy into each worktree harma creates; same as `harma worktree --copy`
 
 | Command | Description |
 |---|---|
-| `trust [on\|off]` | Shows or sets the project's trust policy, and records who changed it |
+| `trust [off\|worktrees\|on]` | Shows or sets who answers the folder-trust dialog: `worktrees` (default) harma for the worktrees it creates, `on` also the project folder, `off` never; records who changed it |
+| `worktree [--copy ".env,…"]` | Shows or sets the untracked files harma copies into each worktree it creates |
 
 ## Know your resources
 

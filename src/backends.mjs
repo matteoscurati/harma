@@ -202,13 +202,14 @@ export class HerdrBackend {
     return { ...t, layout: 'worktree', workspace: id, workspaceCreated: false, worktree: { path, branch: r.worktree.branch ?? branch } };
   }
 
-  async start({ name, cwd, argv, env = {}, harness, root, project, layout, worktree }) {
+  async start({ name, cwd, argv, env = {}, harness, root, project, layout, worktree, prepareWorktree }) {
     checkAgentName(name);
     const kind = herdrKind(harness);
     if (!kind) throw new HarmaError(`herdr non riconosce ${harness} come agente interattivo`, { hint: 'Usa --headless (lavoro non interattivo) o --backend hc' });
     const at = worktree
       ? await this.worktree({ root: this.machine ? cwd : root, name, branch: worktree.branch, env })
       : await this.place({ layout, root, project, cwd, label: name, env });
+    if (at.worktree && prepareWorktree) at.worktree.copy = await prepareWorktree(at.worktree.path);
     const startArgs = ['agent', 'start', name, '--kind', kind, '--pane', at.paneId, '--timeout', '60000'];
     if (argv.length > 1) startArgs.push('--', ...argv.slice(1));
     const started = await this.startWhenShellReady(startArgs);
@@ -239,11 +240,12 @@ export class HerdrBackend {
    * reports to herdr and takes the agent's name; harma waits for that name to
    * know the job started. Returns what start() returns.
    */
-  async startHeadless({ name, cwd, root, project, layout, worktree, command }) {
+  async startHeadless({ name, cwd, root, project, layout, worktree, prepareWorktree, command }) {
     checkAgentName(name);
     const at = worktree
       ? await this.worktree({ root, name, branch: worktree.branch })
       : await this.place({ layout, root, project, cwd, label: name });
+    if (at.worktree && prepareWorktree) at.worktree.copy = await prepareWorktree(at.worktree.path);
     if (!await this.waitForShell(at.paneId)) {
       await this.discard(at, name);
       throw new HarmaError(`la shell del pane non è arrivata al prompt entro ${this.shellWaitMs / 1000} s; il lavoro non è partito`);

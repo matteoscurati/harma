@@ -15,7 +15,8 @@ Every command takes `--json`. Targets are `harness:model` (for example `claude:c
 | `select --set "job=h:m@e\|h:m@e,job=none"` | Record the user's choices; `\|` separates models in order of preference; the orchestrator takes one model; at most 5 per job |
 | `select --accept` / `select --show` | Accept all proposals (only if the user said so) / print choices |
 | `dispatch --name n (--model h:m [--effort e] \| --task-type job) [--prompt "…" \| --prompt-file f] [--cwd dir] [--layout auto\|workspace\|tab\|split[:right\|:down]] [--worktree [--branch b]] [--headless [--max-time s]] [--machine m --cwd dir] [--wait] [--timeout s] [--yes]` | Start an agent and send the task; `--headless`: one task, one answer; `--machine`: on another machine's herdr |
-| `trust [on\|off]` | Show or set the project's trust policy; only on the user's request |
+| `trust [off\|worktrees\|on]` | Show or set who answers folder-trust dialogs (default `worktrees`); change it only on the user's request |
+| `worktree [--copy ".env,…"]` | Show or set the untracked files copied into each new worktree; set it only on the user's request |
 | `send n "text" [--wait] [--timeout s] [--yes]` | More work for an open interactive agent (refused for a headless job) |
 | `read n [--lines N]` | Recent screen output of an agent; for a headless job, its answer |
 | `status [--all]` | Open agents (all with `--all`): model, effort, live state, age, session id |

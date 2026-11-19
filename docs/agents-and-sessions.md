@@ -29,6 +29,17 @@ harma knows it runs inside herdr from the variables herdr sets in each pane (`HE
 
 `dispatch --worktree` gives the agent its own git checkout, so agents that write code in parallel don't overwrite each other. herdr creates the worktree on branch `harma/agent_name` (or `--branch`), under its worktrees folder, and opens it as a workspace grouped with the project's in the sidebar. The agent works there; the orchestrator reviews the branch and merges it.
 
+Before starting, `dispatch` tells you what the agent won't find there. A worktree starts from the last commit: changes you haven't committed stay in your folder, and the plan counts them (harma's own `.harma/` excepted). Files git doesn't track are missing too; for `.env` files at the project root the plan names them and the command that copies them.
+
+To copy untracked files into every worktree harma creates, list them once:
+
+```sh
+harma worktree --copy ".env,.env.local"   # paths relative to the project root
+harma worktree --copy ""                  # copy nothing
+```
+
+harma copies them from the project after creating the worktree and before starting the agent, files or whole folders, and never over a file already there. A large folder such as `node_modules` takes as long to copy as its size. On another machine nothing is copied.
+
 harma never deletes a worktree, because it holds the agent's work. `cleanup` closes the agent and prints where the checkout is; remove it with `git worktree remove` once the work is merged. The one exception is a worktree whose agent did not start: nothing has worked there yet, so harma asks herdr to remove the checkout (never forced) and keeps the branch, and the same dispatch can run again.
 
 ### Another machine
@@ -61,22 +72,34 @@ Nobody answers permission requests in print mode: each CLI applies its own non-i
 
 ## Folder trust
 
-The first time Claude Code, Codex or Antigravity opens a folder, it asks whether you trust it, and waits. By default harma leaves that question to you: `dispatch` exits with code 4 and the task isn't sent.
+The first time Claude Code, Codex or Antigravity opens a folder, it asks whether you trust it, and waits. Each CLI keeps that answer differently, which matters for worktrees:
 
-If you'd rather not answer it for every new agent, turn on the project's trust policy:
+- **Claude Code** didn't ask in a new worktree of a project it already trusted, in our tests
+- **Codex** applies the answer to the whole repository root, so it asks once per repository, worktrees included
+- **Antigravity** records each folder on its own, so it asks for every new worktree
+
+The project's trust policy decides who answers:
+
+| Policy | Who answers the folder-trust dialog |
+|---|---|
+| `worktrees` (default) | harma, for a worktree it just created for the agent; you, for any other folder |
+| `on` | harma, for the project folder, a folder under it, or a worktree it created |
+| `off` | You, always |
 
 ```sh
-harma trust on      # or: harma init … --trust-project
-harma trust off
+harma trust             # shows the policy
+harma trust worktrees   # or: on, off; harma init … --trust-project sets on
 ```
 
-With the policy on, when an agent stops at startup harma reads its screen and answers only if all of these hold:
+A worktree harma just created holds the project's own committed files, on a branch harma made, so `worktrees` is on by default. With Codex, trusting a worktree means trusting the repository, as Codex's own dialog says. Projects set up before 0.5.0 keep their choice: `trust on` stays `on`, `trust off` stays `off`.
+
+When an agent stops at startup and the policy covers its folder, harma reads its screen and answers only if all of these hold:
 
 - the screen is that CLI's folder-trust dialog, matched on its exact text
-- the dialog names the project folder, a folder under it, or the worktree harma created for the agent
+- the dialog names that folder
 - the selected option is the trust option; harma moves to it and checks again before pressing Enter
 
-Otherwise it leaves the agent waiting, as without the policy. Each answer is recorded in `.harma/agents.jsonl` as a `trusted` event, and each refusal as `trust_skipped`. harma never answers tool-permission dialogs, such as a request to run a command: those stay with you.
+Otherwise it leaves the agent waiting: `dispatch` exits with code 4 and the task isn't sent. Each answer is recorded in `.harma/agents.jsonl` as a `trusted` event, and each refusal as `trust_skipped`. harma never answers tool-permission dialogs, such as a request to run a command: those stay with you.
 
 ## Session IDs
 

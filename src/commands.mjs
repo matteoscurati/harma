@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, cpSync } from 'node:fs';
+import { resolve, join, dirname } from 'node:path';
 import { loadCatalog, harnesses } from './catalog.mjs';
 import { parseTarget, effortValues, launchSpec, resumeArgv, meta, herdrKind, headlessOf, headlessSpec } from './harness.mjs';
 import {
@@ -11,7 +11,7 @@ import { collectCredits } from './credits.mjs';
 import { rankRows, refreshFromAA } from './rank.mjs';
 import { route, taskProfile, TASK_PROFILES } from './route.mjs';
 import { selectBackend, HerdrBackend, HcBackend, projectId, checkAgentName, LAYOUTS } from './backends.mjs';
-import { trustableFolder } from './trust.mjs';
+import { trustableFolder, trustPolicy, TRUST_LEVELS } from './trust.mjs';
 import { usageFor, estimateCost, findCodexSession } from './usage.mjs';
 import { table, HarmaError, now, which, readJson, run, shq } from './util.mjs';
 import { modelOptions, selectionRows, applySelection, parseSetSpec, describe, describePick, ORCHESTRATOR, rosterPicks, choosePick } from './roster.mjs';
@@ -58,44 +58,62 @@ export async function cmdInit(flags, opts = {}) {
     if (!LAYOUTS.includes(String(flags.layout).split(':')[0])) throw new HarmaError(`--layout: ${LAYOUTS.join(' | ')} (split:down per dividere in basso)`);
     cfg.herdr = { ...(cfg.herdr ?? {}), layout: flags.layout };
   }
-  if (flags['trust-project']) cfg.trust_project = true;
+  if (flags['trust-project']) { cfg.trust = 'on'; delete cfg.trust_project; }
+  if (flags['worktree-copy'] !== undefined) cfg.worktree_copy = parseCopyList(flags['worktree-copy']);
   if (flags.policy) {
     if (!['confirm', 'auto-within-budget'].includes(flags.policy)) throw new HarmaError('--policy: confirm | auto-within-budget');
     cfg.dispatch_policy = flags.policy;
   }
   saveConfig(root, cfg);
   appendEvent(root, { type: 'orchestrator', ...cfg.orchestrator });
-  if (flags['trust-project']) appendEvent(root, { type: 'trust_policy', value: true, by: 'utente (harma init --trust-project)' });
+  if (flags['trust-project']) appendEvent(root, { type: 'trust_policy', value: 'on', by: 'utente (harma init --trust-project)' });
   emit({ ...c, root }, flags, cfg, () => [
     `Progetto harma: ${root}`,
     `Orchestratore: ${t.harness}:${t.model} @ ${effort ?? 'default'}`,
     `Backend: ${cfg.backend} · Layout herdr: ${cfg.herdr?.layout ?? 'auto'} · Policy di delega: ${cfg.dispatch_policy}`,
-    `Fiducia nella cartella: ${cfg.trust_project ? 'harma risponde per gli agenti (harma trust off per disattivare)' : 'la dà l\'utente (harma trust on per delegarla a harma)'}`,
+    `Fiducia nella cartella: ${TRUST_TEXT[trustPolicy(cfg, readEvents(root))]}`,
+    ...(cfg.worktree_copy?.length ? [`Copiati in ogni worktree: ${cfg.worktree_copy.join(', ')}`] : []),
     'Prossimi passi: harma models · harma credits · harma rank',
   ].join('\n'));
   return cfg;
 }
 
+const TRUST_TEXT = {
+  off: 'la dà sempre l\'utente (harma trust worktrees o on per delegarla a harma)',
+  worktrees: 'harma risponde per i worktree che crea, l\'utente per il resto (harma trust off per disattivare, on per includere il progetto)',
+  on: 'harma risponde per il progetto e i worktree che crea (harma trust worktrees o off per restringere)',
+};
+
 /**
- * The project's trust policy: whether harma answers the folder-trust dialog
- * of the agents it starts. The user's decision; an orchestrator never turns
- * it on by itself.
+ * The project's trust policy: whose folder-trust dialog harma answers.
+ * The user's decision; an orchestrator never changes it by itself.
  */
 export async function cmdTrust(flags, opts = {}) {
   const c = ctx(opts);
   const cfg = loadConfig(c.root, { required: true });
   const want = flags._[0];
-  if (want && !['on', 'off'].includes(want)) throw new HarmaError('Uso: harma trust [on|off]');
+  if (want && !TRUST_LEVELS.includes(want)) throw new HarmaError('Uso: harma trust [off|worktrees|on]');
   if (want) {
-    cfg.trust_project = want === 'on';
+    cfg.trust = want;
+    delete cfg.trust_project;
     saveConfig(c.root, cfg);
-    appendEvent(c.root, { type: 'trust_policy', value: cfg.trust_project, by: `utente (harma trust ${want})` });
+    appendEvent(c.root, { type: 'trust_policy', value: want, by: `utente (harma trust ${want})` });
   }
-  const data = { trust_project: Boolean(cfg.trust_project), root: c.root };
-  emit(c, flags, data, () => (cfg.trust_project
-    ? `Fiducia attiva per ${c.root}: harma risponde "mi fido" al dialogo di Claude Code, Codex e Antigravity, solo per questa cartella e i worktree che crea. I permessi sugli strumenti restano all'utente.`
-    : `Fiducia disattivata per ${c.root}: se un agente chiede di fidarsi della cartella, aspetta l'utente.`));
+  const level = trustPolicy(cfg, readEvents(c.root));
+  const data = { trust: level, trust_project: level === 'on', root: c.root };
+  emit(c, flags, data, () => `Fiducia nella cartella per ${c.root}: ${TRUST_TEXT[level]}. Vale per il dialogo "ti fidi di questa cartella?" di Claude Code, Codex e Antigravity; i permessi sugli strumenti restano all'utente.`);
   return data;
+}
+
+/** "a, b" → ['a', 'b']: paths relative to the project, never outside it. */
+function parseCopyList(spec) {
+  const list = String(spec).split(',').map((s) => s.trim()).filter(Boolean);
+  for (const p of list) {
+    if (p.startsWith('/') || p.startsWith('~') || p.split(/[\\/]/).includes('..')) {
+      throw new HarmaError(`--worktree-copy: ${p} non è un percorso dentro il progetto`, { hint: 'Percorsi relativi alla radice del progetto, es. .env,.env.local,config/secrets.yml' });
+    }
+  }
+  return list;
 }
 
 // 2 ─ inventory ────────────────────────────────────────────────────────────
@@ -278,8 +296,16 @@ export async function cmdDispatch(flags, opts = {}) {
     prompt_chars: prompt?.length ?? 0, policy: cfg.dispatch_policy,
     layout: flags.worktree ? 'worktree' : (flags.layout ?? cfg.herdr?.layout ?? 'auto'),
     worktree: flags.worktree ? { branch: flags.branch ?? `harma/${flags.name}` } : null,
-    trust_project: Boolean(cfg.trust_project),
+    trust: trustPolicy(cfg, readEvents(c.root)),
   };
+  if (plan.worktree && !machine) {
+    const check = await worktreeCheck(c, cfg);
+    plan.uncommitted = check.uncommitted;
+    notes.push(...check.notes);
+  }
+  if (plan.worktree && machine && cfg.worktree_copy?.length) notes.push(`worktree_copy non si applica su ${machine}: i file restano su questa macchina`);
+  const trustBy = headless ? 'non serve' : machine ? 'la dà l\'utente (altra macchina)'
+    : plan.trust === 'on' || (plan.trust === 'worktrees' && plan.worktree) ? `la dà harma (policy trust ${plan.trust})` : 'la dà l\'utente';
 
   const gate = await dispatchGate(c, cfg, pick.harness, flags, opts);
   if (!gate.allowed) {
@@ -289,7 +315,7 @@ export async function cmdDispatch(flags, opts = {}) {
       `Agente ${plan.agent}: ${plan.harness}:${plan.model} @ ${plan.effort ?? 'default'} (${plan.why})`,
       `Comando: ${plan.argv.join(' ')}${hs ? ` ${promptHint(hs.prompt)}` : ''}${Object.keys(plan.env).length ? `  env ${JSON.stringify(plan.env)}` : ''}`,
       `Modo: ${headless ? 'non interattivo (un compito, una risposta; nessuno risponde alle richieste di permesso)' : 'interattivo'}${machine ? ` · macchina: ${machine}` : ''}`,
-      `Dove: ${plan.worktree ? `worktree su branch ${plan.worktree.branch}` : `layout ${plan.layout}`} · fiducia nella cartella: ${headless ? 'non serve' : machine ? 'la dà l\'utente (altra macchina)' : plan.trust_project ? 'la dà harma (policy del progetto)' : 'la dà l\'utente'}`,
+      `Dove: ${plan.worktree ? `worktree su branch ${plan.worktree.branch}` : `layout ${plan.layout}`} · fiducia nella cartella: ${trustBy}`,
       ...plan.notes.map((n) => `Nota: ${n}`),
       'Se l\'utente approva, ripeti lo stesso comando con --yes.',
     ].join('\n'));
@@ -307,6 +333,8 @@ export async function cmdDispatch(flags, opts = {}) {
   const startedMs = Date.now();
   if (plan.worktree && backend.name !== 'herdr') throw new HarmaError('--worktree richiede il backend herdr');
   const layout = plan.layout === 'worktree' ? undefined : plan.layout;
+  // Files git does not track (e.g. .env) go into a new worktree before the agent starts.
+  const prepareWorktree = plan.worktree && !machine && cfg.worktree_copy?.length ? (path) => copyIntoWorktree(c.root, path, cfg.worktree_copy) : null;
   let runDir = null;
   let started;
   if (headless) {
@@ -325,11 +353,11 @@ export async function cmdDispatch(flags, opts = {}) {
     const jobFile = join(runDir, 'job.json');
     writeFileSync(jobFile, JSON.stringify(job, null, 2) + '\n');
     started = await backend.startHeadless({
-      name: flags.name, cwd, root: c.root, project, layout, worktree: plan.worktree, command: [process.execPath, BIN, '_run', jobFile],
+      name: flags.name, cwd, root: c.root, project, layout, worktree: plan.worktree, prepareWorktree, command: [process.execPath, BIN, '_run', jobFile],
     });
   } else {
     started = await backend.start({
-      name: flags.name, cwd, argv: spec.argv, env: spec.env, harness: pick.harness, root: c.root, project, layout, worktree: plan.worktree,
+      name: flags.name, cwd, argv: spec.argv, env: spec.env, harness: pick.harness, root: c.root, project, layout, worktree: plan.worktree, prepareWorktree,
     });
   }
   rememberWorkspace(c, cfg, started);
@@ -363,8 +391,8 @@ export async function cmdDispatch(flags, opts = {}) {
   const result = { started: true, plan, target: started, session_id: sid ?? null, prompt: promptState, trust: trusted, exitCode: promptState === 'blocked' ? EXIT_BLOCKED : 0 };
   emit(c, flags, result, () => [
     `Avviato ${flags.name}: ${pick.harness}:${pick.model} @ ${pick.effort ?? 'default'} su ${backend.name} (${where(started)})`,
-    ...(started.worktree ? [`Worktree: ${started.worktree.path} (branch ${started.worktree.branch})`] : []),
-    ...(trusted ? [`Fiducia nella cartella: ${trusted.ok ? 'data (policy del progetto)' : `non data — ${trusted.detail}`}`] : []),
+    ...worktreeLines(started),
+    ...(trusted ? [`Fiducia nella cartella: ${trusted.ok ? `data da harma (policy trust ${trustPolicy(cfg, readEvents(c.root))})` : `non data — ${trusted.detail}`}`] : []),
     `Sessione: ${sid ?? 'non ancora nota (verrà letta alla chiusura)'}`,
     promptState === 'sent' ? `Compito inviato (${prompt.length} caratteri)${flags.wait ? '; atteso fino a stato stabile' : ''}.`
       : promptState === 'blocked' ? `BLOCCATO: ${flags.name} aspetta una risposta (es. fiducia nella cartella) e il compito NON è stato inviato.\nLeggi con: harma read ${flags.name} — chiedi all'utente di rispondere nel suo terminale, poi: harma send ${flags.name} "<compito>" --yes`
@@ -380,6 +408,73 @@ function targetOf(started) {
     name: started.target, tab: started.tab ?? null, pane: started.pane ?? null, address: started.address ?? null,
     layout: started.layout ?? null, workspace: started.workspace ?? null, machine: started.machine ?? null,
   };
+}
+
+function worktreeLines(started) {
+  const w = started.worktree;
+  if (!w) return [];
+  return [
+    `Worktree: ${w.path} (branch ${w.branch})`,
+    ...(w.copy?.copied.length ? [`Copiati nel worktree: ${w.copy.copied.join(', ')}`] : []),
+    ...(w.copy?.skipped.length ? [`Non copiati: ${w.copy.skipped.join('; ')}`] : []),
+  ];
+}
+
+/**
+ * Before a worktree: what the agent won't find there. It starts from the last
+ * commit, so uncommitted changes stay behind (harma's own .harma/ excepted),
+ * and files git ignores, such as .env, are missing unless worktree_copy lists them.
+ */
+async function worktreeCheck(c, cfg) {
+  const notes = [];
+  if (!which('git', c.env)) return { uncommitted: null, notes };
+  const st = await run('git', ['-C', c.root, 'status', '--porcelain', '--untracked-files=all'], { env: c.env });
+  if (!st.ok) return { uncommitted: null, notes };
+  const lines = st.stdout.split('\n').filter(Boolean).filter((l) => !l.slice(3).startsWith('.harma/'));
+  const untracked = lines.filter((l) => l.startsWith('??')).length;
+  const changed = lines.length - untracked;
+  if (changed || untracked) {
+    const parts = [changed ? `${changed} file modificati` : null, untracked ? `${untracked} file nuovi` : null].filter(Boolean).join(' e ');
+    notes.push(`il worktree parte dall'ultimo commit: ${parts} non committati non ci saranno. Se all'agente servono, committali prima; per una review del lavoro in corso, non usare --worktree`);
+  }
+  const env = await run('git', ['-C', c.root, 'ls-files', '--others', '--', '.env*'], { env: c.env });
+  const copy = cfg.worktree_copy ?? [];
+  const missing = env.ok ? env.stdout.split('\n').filter((f) => f && !f.includes('/') && !copy.includes(f)) : [];
+  if (missing.length) notes.push(`${missing.join(', ')}: git non li traccia, quindi nel worktree mancheranno. Per copiarli in ogni worktree: harma worktree --copy "${[...copy, ...missing].join(',')}"`);
+  return { uncommitted: { changed, untracked }, notes };
+}
+
+/** Copy the listed paths from the project into a new worktree; never overwrite a file already there. */
+export function copyIntoWorktree(root, dest, list) {
+  const copied = [];
+  const skipped = [];
+  for (const rel of list) {
+    const from = join(root, rel);
+    const to = join(dest, rel);
+    if (!existsSync(from)) { skipped.push(`${rel} (non c'è nel progetto)`); continue; }
+    const folder = statSync(from).isDirectory();
+    if (!folder && existsSync(to)) { skipped.push(`${rel} (già nel worktree)`); continue; }
+    mkdirSync(dirname(to), { recursive: true });
+    cpSync(from, to, { recursive: true, force: false, errorOnExist: false });
+    copied.push(rel);
+  }
+  return { copied, skipped };
+}
+
+/** harma worktree [--copy "a,b"]: what harma copies into each worktree it creates. */
+export async function cmdWorktree(flags, opts = {}) {
+  const c = ctx(opts);
+  const cfg = loadConfig(c.root, { required: true });
+  if (flags.copy !== undefined) {
+    cfg.worktree_copy = parseCopyList(flags.copy);
+    saveConfig(c.root, cfg);
+    appendEvent(c.root, { type: 'worktree_copy', value: cfg.worktree_copy, by: 'utente (harma worktree --copy)' });
+  }
+  const data = { copy: cfg.worktree_copy ?? [] };
+  emit(c, flags, data, () => (data.copy.length
+    ? `In ogni worktree che harma crea copia dal progetto: ${data.copy.join(', ')} (mai sopra un file già presente). Per non copiare niente: harma worktree --copy ""`
+    : 'harma non copia niente nei worktree che crea. Per copiare file che git non traccia, come .env: harma worktree --copy ".env,.env.local"'));
+  return data;
 }
 
 /** A workspace harma just created: remember it, per machine, so the next agents join it. */
@@ -418,7 +513,7 @@ async function headlessStarted(c, flags, { plan, started, pick, backend, runDir,
   const data = { started: true, plan, target: started, mode: 'headless', session_id: result?.session_id ?? sid ?? null, output, result, answer, exitCode: 0 };
   emit(c, flags, data, () => [
     `Avviato ${flags.name} (non interattivo): ${pick.harness}:${pick.model} @ ${pick.effort ?? 'default'} su ${backend.name} (${where(started)})`,
-    ...(started.worktree ? [`Worktree: ${started.worktree.path} (branch ${started.worktree.branch})`] : []),
+    ...worktreeLines(started),
     `Compito inviato (${prompt.length} caratteri). Risposta in ${output}`,
     ...(flags.wait ? [result ? `Esito: ${resultLabel(result)}` : `Ancora in corso dopo ${flags.timeout ?? 600} s: leggi più tardi con harma read ${flags.name}`] : [`Leggi la risposta con: harma read ${flags.name}`]),
     ...plan.notes.map((n) => `Nota: ${n}`),
@@ -436,16 +531,20 @@ function where(started) {
 }
 
 /**
- * Started but blocked: with the project's trust policy on, answer the
- * folder-trust dialog (and only that one) for the project folder or the
- * agent's own worktree. Returns null when nothing was attempted.
+ * Started but blocked: as the project's trust policy allows, answer the
+ * folder-trust dialog (and only that one) for the agent's own worktree or,
+ * with "on", the project folder. Returns null when nothing was attempted.
  */
 async function maybeTrust(c, cfg, backend, { agent, harness, cwd, started }) {
-  if (!started.blocked || !cfg.trust_project || started.machine || typeof backend.answerTrust !== 'function') return null;
-  const res = trustableFolder(cwd, c.root, started.worktree?.path)
+  const level = trustPolicy(cfg, readEvents(c.root));
+  if (!started.blocked || level === 'off' || started.machine || typeof backend.answerTrust !== 'function') return null;
+  const wt = started.worktree?.path ?? null;
+  if (level === 'worktrees' && !wt) return null; // the project folder stays with the user
+  const allowed = level === 'on' ? trustableFolder(cwd, c.root, wt) : trustableFolder(cwd, wt);
+  const res = allowed
     ? await backend.answerTrust({ target: started.target, harness, cwd })
-    : { ok: false, detail: `${cwd} è fuori dal progetto` };
-  appendEvent(c.root, { type: res.ok ? 'trusted' : 'trust_skipped', agent, cwd, detail: res.detail, by: 'policy trust_project' });
+    : { ok: false, detail: `${cwd} è fuori ${level === 'on' ? 'dal progetto' : 'dal worktree dell\'agente'}` };
+  appendEvent(c.root, { type: res.ok ? 'trusted' : 'trust_skipped', agent, cwd, detail: res.detail, by: `policy trust ${level}` });
   if (res.ok) started.blocked = false;
   return res;
 }
