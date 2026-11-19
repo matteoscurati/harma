@@ -2,13 +2,14 @@
 
 All notable changes to harma, newest first. Versions follow [semantic versioning](https://semver.org/).
 
-## Unreleased
+## 0.3.0 (2026-11-19)
 
 Interactive agents on herdr, closer to herdr's own way of running subagents:
 
 - **Agents next to the orchestrator**: when the orchestrator runs inside herdr, new agents open as tabs in its own workspace instead of a separate `harma:<project>` workspace. `--layout split` puts one in a pane beside the orchestrator; `--layout workspace` keeps the old behaviour, which stays the default outside herdr. `harma init --layout` sets the project default
 - **Worktrees**: `dispatch --worktree` gives an agent its own git checkout on branch `harma/<name>`, opened by herdr as a workspace grouped with the project's. harma never deletes it; `cleanup` says where it is
 - **Folder trust**: `harma trust on` (or `init --trust-project`) lets harma answer the "trust this folder?" dialog of Claude Code, Codex and Antigravity, for the project folder and its worktrees only, after matching the dialog's exact text and folder. Off by default; tool permissions are never answered
+- **Score refresh cache**: `harma rank --refresh` now stores only Artificial Analysis figures, in `~/.config/harma/aa-benchmarks.json`, and applies them to the bundled catalog they were fetched for; models, prices and CLI settings always come from the bundled catalog. Run the refresh again after upgrading
 
 ## 0.2.2 (2026-11-18)
 
