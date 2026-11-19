@@ -5,6 +5,7 @@ import { sandbox } from './helpers.mjs';
 import { main } from '../src/cli.mjs';
 import { readEvents, agentsFromEvents, loadConfig } from '../src/state.mjs';
 import { readTrustDialog, trustableFolder } from '../src/trust.mjs';
+import { HerdrBackend } from '../src/backends.mjs';
 
 const run = (sb, args, extra) => main(args, sb.opts(extra));
 const events = (sb) => readEvents(sb.project);
@@ -86,6 +87,29 @@ test('--worktree gives the agent its own checkout in a grouped herdr workspace',
   sb.clear();
   await run(sb, ['cleanup', '--agent', 'builder', '--json']);
   assert.match(JSON.parse(sb.output()).report[0].motivo, /worktree lasciato in .*harma-builder.*git worktree remove/);
+});
+
+test('a new worktree whose shell is still starting: harma waits for the prompt, then starts the agent', async () => {
+  const sb = await project({ inside: true });
+  assert.equal(await dispatch(sb, 'review-api', 'codex:gpt-6.2-sol', ['--worktree'], { FAKE_PANE_BUSY: '2' }), 0);
+  assert.equal(calls(sb, 'agent', 'start').length, 3); // two refusals while the shell starts, then the start
+  const [ag] = sb.state().herdr.agents;
+  assert.deepEqual([ag.name, ag.last_prompt], ['review-api', 'go']);
+  assert.equal(sb.state().herdr.removedWorktrees, undefined);
+});
+
+test('a shell that never reaches its prompt: no agent, the empty worktree is removed, the same dispatch runs again', async () => {
+  const sb = await project({ inside: true });
+  const backend = new HerdrBackend({ env: { ...sb.env, FAKE_PANE_BUSY: '99' } });
+  backend.shellWaitMs = 0;
+  let msg = '';
+  const args = ['dispatch', '--name', 'review-api', '--model', 'codex:gpt-6.2-sol', '--prompt', 'go', '--yes', '--worktree'];
+  assert.equal(await run(sb, args, { backend, err: (s) => { msg += s; } }), 1);
+  assert.match(msg, /shell del pane non è arrivata al prompt.*nessun agente è stato avviato/);
+  assert.deepEqual(sb.state().herdr.removedWorktrees, [`${sb.project}-wt/harma-review-api`]);
+  assert.equal(agents(sb).length, 0);
+  assert.equal(await dispatch(sb, 'review-api', 'codex:gpt-6.2-sol', ['--worktree']), 0);
+  assert.equal(sb.state().herdr.worktrees.length, 1);
 });
 
 // ── trust ─────────────────────────────────────────────────────────────────

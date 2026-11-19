@@ -1,6 +1,6 @@
 {
   "name": "harma-kit",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "A skill for Claude Code and Codex that lets one orchestrator model run a project: it inventories the models on your machine, reads their credits and intelligence per effort, routes work to them through herdr or herdr-core, watches cost, and saves every agent's session before closing it.",
   "keywords": [
     "claude-code",
