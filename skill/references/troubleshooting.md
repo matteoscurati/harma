@@ -5,7 +5,7 @@
 The agent started but waits on a question, often "trust this folder?" in a new directory, and the task wasn't delivered.
 
 1. `harma read <name>` to see the question
-2. Tell the user what it asks and ask them to answer it in the agent's tab or terminal. Don't answer it yourself, even when the answer looks obvious: trust and approval decisions belong to the user. If it's the folder-trust dialog and the user wants harma to handle those, they can run `harma trust on` (or ask you to); harma then answers it for the project folder only
+2. Tell the user what it asks and ask them to answer it in the agent's tab or terminal. Don't answer it yourself, even when the answer looks obvious: trust and approval decisions belong to the user. If it's the folder-trust dialog in the project folder and the user wants harma to handle those, they can run `harma trust on` (or ask you to); harma already answers it in the worktrees it creates, unless the user ran `harma trust off`
 3. After they confirm, `harma send <name> "<task>" --yes` (this needs their yes for the send)
 
 ## No usable model for a job

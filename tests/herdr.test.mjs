@@ -113,7 +113,7 @@ test('a shell that never reaches its prompt: no agent, the empty worktree is rem
 });
 
 // ── trust ─────────────────────────────────────────────────────────────────
-test('trust policy off: a trust dialog is left to the user, no key is sent', async () => {
+test('default policy: a trust dialog in the project folder is left to the user, no key is sent', async () => {
   const sb = await project();
   assert.equal(await dispatch(sb, 'planner', 'claude:claude-opus-5-5', [], { FAKE_START_BLOCKED: 'claude' }), 4);
   assert.equal(sb.state().herdr.keys, undefined);
@@ -166,14 +166,32 @@ test('trust policy on: an agent in its own worktree is trusted for that worktree
 test('harma trust shows and changes the policy, and records who changed it', async () => {
   const sb = await project();
   await run(sb, ['trust', '--json']);
-  assert.equal(JSON.parse(sb.output()).trust_project, false);
-  assert.equal(await run(sb, ['trust', 'on']), 0);
-  assert.equal(loadConfig(sb.project).trust_project, true);
-  assert.equal(await run(sb, ['trust', 'off']), 0);
-  assert.equal(loadConfig(sb.project).trust_project, false);
+  assert.equal(JSON.parse(sb.output()).trust, 'worktrees'); // the default
+  for (const level of ['on', 'off', 'worktrees']) {
+    assert.equal(await run(sb, ['trust', level]), 0);
+    assert.equal(loadConfig(sb.project).trust, level);
+  }
   assert.deepEqual(events(sb).filter((e) => e.type === 'trust_policy').map((e) => [e.value, e.by]),
-    [[true, 'utente (harma trust on)'], [false, 'utente (harma trust off)']]);
+    [['on', 'utente (harma trust on)'], ['off', 'utente (harma trust off)'], ['worktrees', 'utente (harma trust worktrees)']]);
   assert.equal(await run(sb, ['trust', 'maybe']), 1);
+});
+
+test('default policy: harma answers the trust dialog of a worktree it just created; trust off leaves it to the user', async () => {
+  const sb = await project();
+  assert.equal(await dispatch(sb, 'builder', 'codex:gpt-6.2-sol', ['--worktree'], { FAKE_START_BLOCKED: 'codex' }), 0);
+  assert.deepEqual(sb.state().herdr.trusted, ['builder']);
+  assert.equal(events(sb).find((e) => e.type === 'trusted').by, 'policy trust worktrees');
+  await run(sb, ['trust', 'off']);
+  assert.equal(await dispatch(sb, 'other', 'codex:gpt-6.2-sol', ['--worktree'], { FAKE_START_BLOCKED: 'codex' }), 4);
+  assert.deepEqual(sb.state().herdr.trusted, ['builder']);
+});
+
+test('older projects keep their trust choice: trust_project true is on, a recorded trust off stays off', async () => {
+  const { trustPolicy } = await import('../src/trust.mjs');
+  assert.equal(trustPolicy({ trust_project: true }), 'on');
+  assert.equal(trustPolicy({ trust_project: false }, [{ type: 'trust_policy', value: true }, { type: 'trust_policy', value: false }]), 'off');
+  assert.equal(trustPolicy({ trust_project: false }), 'worktrees');
+  assert.equal(trustPolicy({ trust: 'off', trust_project: true }), 'off');
 });
 
 // ── the real dialogs, as captured under herdr 0.9.5 ────────────────────────
@@ -231,4 +249,57 @@ test('trustableFolder: the project, folders under it, or the agent\'s worktree o
   assert.ok(!trustableFolder('/p/application', '/p/app'));
   assert.ok(!trustableFolder('/p', '/p/app'));
   assert.ok(trustableFolder('/wt/app/builder', '/p/app', '/wt/app/builder'));
+});
+
+// ── what a worktree lacks ─────────────────────────────────────────────────
+import { symlinkSync, writeFileSync as write, readFileSync as read, existsSync as exists } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { join as pjoin } from 'node:path';
+
+/** A project that is a git repository, with one commit. */
+async function gitProject() {
+  const sb = await project({ inside: true });
+  symlinkSync('/usr/bin/git', pjoin(sb.bin, 'git'));
+  const git = (...args) => execFileSync('git', ['-C', sb.project, ...args], { env: { ...sb.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@x', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@x' } });
+  git('init', '-q');
+  write(pjoin(sb.project, '.gitignore'), '.env\n');
+  write(pjoin(sb.project, 'app.js'), 'v1\n');
+  git('add', '.gitignore', 'app.js');
+  git('commit', '-q', '-m', 'init');
+  return sb;
+}
+
+test('--worktree warns about uncommitted work and .env files the agent will not find', async () => {
+  const sb = await gitProject();
+  write(pjoin(sb.project, 'app.js'), 'v2\n');
+  write(pjoin(sb.project, 'notes.md'), 'draft\n');
+  write(pjoin(sb.project, '.env'), 'KEY=1\n');
+  assert.equal(await run(sb, ['dispatch', '--name', 'builder', '--model', 'codex:gpt-6.2-sol', '--prompt', 'go', '--worktree', '--json']), 3);
+  const { plan } = JSON.parse(sb.output());
+  assert.deepEqual(plan.uncommitted, { changed: 1, untracked: 1 }); // harma's own .harma/ does not count
+  assert.match(plan.notes.join('\n'), /1 file modificati e 1 file nuovi non committati non ci saranno/);
+  assert.match(plan.notes.join('\n'), /\.env: git non li traccia[\s\S]*harma worktree --copy "\.env"/);
+});
+
+test('harma worktree --copy: those files go into each new worktree before the agent starts', async () => {
+  const sb = await gitProject();
+  write(pjoin(sb.project, '.env'), 'KEY=1\n');
+  assert.equal(await run(sb, ['worktree', '--copy', '.env,missing.txt,app.js']), 0);
+  assert.deepEqual(loadConfig(sb.project).worktree_copy, ['.env', 'missing.txt', 'app.js']);
+  // app.js is tracked: the fake checkout gets it as git would, and harma must not overwrite it.
+  const wt = `${sb.project}-wt/harma-builder`;
+  execFileSync('mkdir', ['-p', wt]);
+  write(pjoin(wt, 'app.js'), 'from git\n');
+  sb.clear();
+  assert.equal(await dispatch(sb, 'builder', 'codex:gpt-6.2-sol', ['--worktree']), 0);
+  assert.equal(read(pjoin(wt, '.env'), 'utf8'), 'KEY=1\n');
+  assert.equal(read(pjoin(wt, 'app.js'), 'utf8'), 'from git\n');
+  assert.match(sb.output(), /Copiati nel worktree: \.env\nNon copiati: missing\.txt \(non c'è nel progetto\); app\.js \(già nel worktree\)/);
+  assert.equal(agents(sb)[0].worktree.copy.copied[0], '.env');
+  const e = { text: '' };
+  assert.equal(await run(sb, ['worktree', '--copy', '../secrets'], { err: (s) => { e.text += s; } }), 1);
+  assert.match(e.text, /non è un percorso dentro il progetto/);
+  assert.equal(await run(sb, ['worktree', '--copy', '']), 0);
+  assert.deepEqual(loadConfig(sb.project).worktree_copy, []);
+  assert.ok(exists(wt));
 });

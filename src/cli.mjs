@@ -1,6 +1,6 @@
 import {
   cmdInit, cmdModels, cmdCredits, cmdRank, cmdRoute, cmdDispatch, cmdSend, cmdRead,
-  cmdStatus, cmdCosts, cmdCleanup, cmdResume, cmdSelect, cmdTrust,
+  cmdStatus, cmdCosts, cmdCleanup, cmdResume, cmdSelect, cmdTrust, cmdWorktree,
 } from './commands.mjs';
 import { cmdRun } from './run.mjs';
 import { cmdInstall, cmdUninstall, cmdDoctor } from './install.mjs';
@@ -31,8 +31,10 @@ Uso: harma <comando> [opzioni]   (--json su ogni comando per output leggibile da
 
 Progetto
   init --orchestrator <harness>:<model> --effort <level> [--backend auto|herdr|hc] [--policy confirm|auto-within-budget]
-       [--layout auto|workspace|tab|split[:right|:down]] [--trust-project]
-  trust [on|off]                 harma risponde (on) o no (off) al dialogo "fidati della cartella" degli agenti
+       [--layout auto|workspace|tab|split[:right|:down]] [--trust-project] [--worktree-copy ".env,…"]
+  trust [off|worktrees|on]       chi risponde al dialogo "fidati della cartella" degli agenti: worktrees
+                                 (default) harma per i worktree che crea; on anche per il progetto; off mai
+  worktree [--copy ".env,…"]     file che git non traccia da copiare in ogni worktree che harma crea
 
 Conoscere le risorse
   models                         CLI di agenti, modelli ed effort su questa macchina
@@ -76,6 +78,7 @@ const COMMANDS = {
   init: cmdInit, models: cmdModels, credits: cmdCredits, rank: cmdRank, route: cmdRoute,
   dispatch: cmdDispatch, send: cmdSend, read: cmdRead, status: cmdStatus, costs: cmdCosts,
   cleanup: cmdCleanup, resume: cmdResume, select: cmdSelect, trust: cmdTrust, install: cmdInstall, uninstall: cmdUninstall, doctor: cmdDoctor,
+  worktree: cmdWorktree,
   _run: cmdRun, // internal: the runner of a headless job, typed by harma into its terminal
 };
 

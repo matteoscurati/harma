@@ -2,6 +2,14 @@
 
 All notable changes to harma, newest first. Versions follow [semantic versioning](https://semver.org/).
 
+## 0.5.0 (2026-11-20)
+
+Worktrees without surprises:
+
+- **Folder trust in worktrees**: Antigravity asks "do you trust this folder?" for every new worktree, and Codex once per repository. The trust policy now has three levels, and the new default `worktrees` lets harma answer that dialog in the worktrees it just created, which hold the project's committed files; the project folder stays with you. `harma trust on` adds the project folder, `harma trust off` turns it off. Projects that ran `trust on` or `trust off` keep their choice
+- **What a worktree lacks**: before a `--worktree` dispatch, the plan counts the uncommitted changes the agent won't see, since the worktree starts from the last commit, and names the `.env` files git doesn't track
+- **Copy into worktrees**: `harma worktree --copy ".env,.env.local"` (or `init --worktree-copy`) lists untracked files or folders that harma copies into each new worktree before the agent starts, never over a file already there
+
 ## 0.4.0 (2026-11-19)
 
 More ways to run agents in herdr:

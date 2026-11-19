@@ -13,7 +13,8 @@ export const DEFAULT_CONFIG = {
   orchestrator: null, // {harness, model, effort}
   backend: 'auto', // auto | herdr | hc
   dispatch_policy: 'confirm', // confirm | auto-within-budget
-  trust_project: false, // true: harma answers the folder-trust dialog of its agents (user's choice)
+  trust: null, // off | worktrees | on: whose folder-trust dialog harma answers; null = worktrees (see trustPolicy)
+  worktree_copy: [], // untracked files or folders (e.g. .env) copied into each worktree harma creates
   budgets: {}, // provider -> {limit, currency, period}
   thresholds: {
     low_remaining_pct: 20, // under this, delegate less to the provider

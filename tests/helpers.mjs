@@ -50,7 +50,7 @@ if (g === 'worktree' && c === 'create') {
   const path = arg('--cwd') + '-wt/' + arg('--branch').split('/').join('-');
   if ((h.worktrees ?? []).some((x) => x.path === path)) return fail('worktree_create_failed', "fatal: '" + path + "' already exists");
   h.ws++; const w = 'w' + h.ws; h.open.push(w); h.tabs[w + ':t0'] = w; h.labels = { ...h.labels, [w + ':t0']: '1' };
-  h.paneCwd[w + ':p0'] = path;
+  h.paneCwd[w + ':p0'] = path; fs.mkdirSync(path, { recursive: true }); // like git, the checkout exists on disk
   h.worktrees = [...(h.worktrees ?? []), { path, branch: arg('--branch'), label: arg('--label'), ws: w }];
   return ok({ type: 'worktree_created', workspace: { workspace_id: w, label: arg('--label') }, tab: { tab_id: w + ':t0' }, root_pane: { pane_id: w + ':p0', tab_id: w + ':t0' }, worktree: { path, branch: arg('--branch') } });
 }
