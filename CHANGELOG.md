@@ -2,6 +2,12 @@
 
 All notable changes to harma, newest first. Versions follow [semantic versioning](https://semver.org/).
 
+## 0.3.1 (2026-11-19)
+
+New model:
+
+- **Gemini 4 Neon** in Antigravity (`agy:gemini-4-neon`) at low, medium, high and xhigh, with prices from Google's official page and Artificial Analysis Intelligence Index v5.0.1 per effort. `harma models` lists only the efforts `agy models` shows for your account, and `dispatch` checks the exact model ID again before starting the agent
+
 ## 0.3.0 (2026-11-19)
 
 Interactive agents on herdr, closer to herdr's own way of running subagents:
