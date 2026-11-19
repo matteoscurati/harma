@@ -27,6 +27,43 @@ export function meta(name) {
   return HARNESS_META[name] ?? {};
 }
 
+/** The herdr agent kind: a Claude Code variant is still Claude Code to herdr. */
+export function herdrKind(name) {
+  const m = meta(name);
+  return m.herdrKind ?? (m.variantOf ? meta(m.variantOf).herdrKind : undefined) ?? null;
+}
+
+// One-shot, non-interactive runs ("headless"). Each entry turns the
+// interactive argv (binary, model, effort, session flags) into the CLI's
+// print mode and says how the prompt goes in: on stdin, as the value of a
+// flag, or as a file. Flags checked with each CLI's --help on 2026-11-19:
+// claude 2.1.3xx -p; codex exec (reads stdin with "-"); agy -p; kimi -p;
+// qwen -p; grok -p (--single); muse exec --prompt-file; mmx text chat
+// --message --non-interactive; vibe --prompt-file.
+const HEADLESS = {
+  claude: { argv: (a) => [...a, '-p'], prompt: { via: 'stdin' } },
+  codex: { argv: ([bin, ...rest]) => [bin, 'exec', ...rest, '-'], prompt: { via: 'stdin' }, sessionPattern: /session id:\s*([0-9a-f-]{36})/i },
+  agy: { argv: (a) => a, prompt: { via: 'flag', flag: '-p' } },
+  kimi: { argv: (a) => a, prompt: { via: 'flag', flag: '-p' } },
+  qwen: { argv: (a) => a, prompt: { via: 'flag', flag: '-p' } },
+  grok: { argv: (a) => a, prompt: { via: 'flag', flag: '-p' } },
+  muse: { argv: ([bin, ...rest]) => [bin, 'exec', ...rest], prompt: { via: 'file', flag: '--prompt-file' } },
+  mmx: { argv: ([bin, ...rest]) => [bin, 'text', 'chat', ...rest, '--non-interactive', '--quiet', '--no-color', '--output', 'text'], prompt: { via: 'flag', flag: '--message' } },
+  vibe: { argv: (a) => [...a, '--output', 'text'], prompt: { via: 'file', flag: '--prompt-file' } },
+};
+
+/** How <harness> runs one prompt without a session to talk to, or null. */
+export function headlessOf(name) {
+  return HEADLESS[name] ?? (meta(name).variantOf ? HEADLESS[meta(name).variantOf] : null) ?? null;
+}
+
+/** The headless argv for a launch spec: {argv, prompt, sessionPattern}. */
+export function headlessSpec(harness, spec) {
+  const h = headlessOf(harness);
+  if (!h) throw new HarmaError(`${harness} non ha una modalità non interattiva nota a harma`);
+  return { argv: h.argv(spec.argv), prompt: h.prompt, sessionPattern: h.sessionPattern ?? null };
+}
+
 /** Parse "codex:gpt-6.2-astra" or a bare model id (harness inferred from the catalog). */
 export function parseTarget(spec, catalog) {
   if (!spec) throw new HarmaError('Manca il modello: usa <harness>:<model>, es. codex:gpt-6.2-astra');
@@ -68,7 +105,8 @@ export function launchSpec({ harness, model, effort }, catalog, { sessionId } = 
   const argv = [binary];
   const env = {};
   const notes = [];
-  if (h.model_flag) argv.push(h.model_flag, name);
+  if (h.model_flag?.startsWith('env:')) env[h.model_flag.slice(4)] = name;
+  else if (h.model_flag) argv.push(h.model_flag, name);
   else notes.push('questa CLI non ha un flag per il modello: usa quello configurato');
 
   let effortApplied = false;

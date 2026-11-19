@@ -52,9 +52,12 @@ export function saveConfig(root, cfg) {
   ensureGitignore(root);
 }
 
-function ensureGitignore(root) {
+/** git ignores harma's caches and headless runs (prompts and answers); added to older projects too. */
+export function ensureGitignore(root) {
   const p = statePath(root, '.gitignore');
-  if (!existsSync(p)) writeFileSync(p, 'cache/\n');
+  const have = existsSync(p) ? readFileSync(p, 'utf8') : '';
+  const missing = ['cache/', 'runs/'].filter((l) => !have.split('\n').includes(l));
+  if (missing.length) writeFileSync(p, have + (have && !have.endsWith('\n') ? '\n' : '') + missing.map((l) => `${l}\n`).join(''));
 }
 
 export function appendEvent(root, event) {
@@ -80,6 +83,7 @@ export function agentsFromEvents(events) {
         Object.assign(cur, {
           harness: e.harness, model: e.model, effort: e.effort, task_type: e.task_type,
           backend: e.backend, target: e.target, cwd: e.cwd, worktree: e.worktree ?? null, started_at: e.at,
+          mode: e.mode ?? 'interactive', run_dir: e.run_dir ?? null,
           session_id: e.session_id ?? cur.session_id ?? null, closed_at: null, state: 'open',
         });
         break;
@@ -97,6 +101,7 @@ export function agentsFromEvents(events) {
         cur.closed_at = null;
         cur.target = e.target ?? cur.target;
         cur.backend = e.backend ?? cur.backend;
+        cur.mode = 'interactive'; // resume always reopens a conversation
         break;
       default:
         break;

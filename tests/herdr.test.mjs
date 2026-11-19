@@ -25,7 +25,7 @@ const dispatch = (sb, name, model, extra = [], env = {}) =>
   run(sb, ['dispatch', '--name', name, '--model', model, '--prompt', 'go', '--yes', ...extra], { env: { ...sb.env, ...env } });
 
 // ── layout ────────────────────────────────────────────────────────────────
-test('inside herdr, agents open as tabs in the orchestrator\'s workspace, not a new workspace', async () => {
+test('inside herdr, agents open in the orchestrator\'s workspace (a tab when its pane size is unknown), not a new workspace', async () => {
   const sb = await project({ inside: true });
   assert.equal(await dispatch(sb, 'builder', 'codex:gpt-6.2-sol'), 0);
   assert.equal(calls(sb, 'workspace', 'create').length, 0);

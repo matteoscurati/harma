@@ -14,7 +14,7 @@ Model targets are written `harness:model`, where the harness is the CLI that run
 
 - `--backend auto|herdr|hc`: terminal backend; `auto` (default) uses herdr when it runs, otherwise `hc`
 - `--policy confirm|auto-within-budget`: dispatch policy; `confirm` is the default, see [consent](how-harma-decides.md#consent)
-- `--layout auto|workspace|tab|split[:down]`: where herdr agents open by default; see [where agents open](agents-and-sessions.md#where-agents-open)
+- `--layout auto|workspace|tab|split[:right|:down]`: where herdr agents open by default; see [where agents open](agents-and-sessions.md#where-agents-open)
 - `--trust-project`: harma answers the folder-trust dialog of the agents it starts; see [folder trust](agents-and-sessions.md#folder-trust)
 
 | Command | Description |
@@ -52,7 +52,7 @@ These commands start or instruct an agent, so under the `confirm` policy they ne
 |---|---|
 | `dispatch --name agent_name (--model harness:model [--effort level] \| --task-type job)` | Starts an agent in its own tab or terminal and sends it the task |
 | `send agent_name "text" [--wait] [--timeout seconds]` | Gives an open agent more work |
-| `read agent_name [--lines count]` | Prints the agent's recent screen output |
+| `read agent_name [--lines count]` | Prints the agent's recent screen output; for a headless job, its answer |
 
 `dispatch` options:
 
@@ -61,8 +61,10 @@ These commands start or instruct an agent, so under the `confirm` policy they ne
 - `--cwd path`: working folder for the agent (default: the project root)
 - `--wait`: waits until the agent is idle again; `--timeout seconds` (default 600)
 - `--author harness:model`: with `--task-type review` and no saved choice, excludes that vendor
-- `--layout auto|workspace|tab|split[:down]`: where the agent opens in herdr (default: the project's layout, `auto`)
+- `--layout auto|workspace|tab|split[:right|:down]`: where the agent opens in herdr (default: the project's layout, `auto`: beside the orchestrator while there is room, then a tab)
 - `--worktree [--branch name]`: gives the agent its own git worktree on `harma/agent_name`, or the branch you name (herdr only)
+- `--headless [--max-time seconds]`: runs the task once in the CLI's print mode and keeps the answer in `.harma/runs/`; needs `--prompt` or `--prompt-file`; see [headless jobs](agents-and-sessions.md#headless-jobs)
+- `--machine name --cwd folder`: runs the agent on another machine's herdr server, in that folder; see [another machine](agents-and-sessions.md#another-machine)
 
 Agent names are lowercase, start with a letter, use `a-z`, `0-9`, `_` or `-`, are at most 32 characters, and are unique among open agents.
 

@@ -4,6 +4,9 @@ import { delimiter, join } from 'node:path';
 
 export const now = () => new Date().toISOString();
 
+/** Quote one word for a POSIX shell (also valid in fish for plain paths). */
+export const shq = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).replace(/'/g, `'\\''`)}'`);
+
 /** Run a program without a shell. Never throws: returns {ok, code, stdout, stderr}. */
 export function run(cmd, args = [], { timeout = 60_000, env, cwd, input } = {}) {
   return new Promise((resolve) => {
