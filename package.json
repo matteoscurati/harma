@@ -13,13 +13,13 @@
   ],
   "author": "matteoscurati",
   "license": "MIT",
-  "homepage": "https://github.com/matteoscurati/harma#readme",
+  "homepage": "https://github.com/parmenide-ai/harma#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/matteoscurati/harma.git"
+    "url": "git+https://github.com/parmenide-ai/harma.git"
   },
   "bugs": {
-    "url": "https://github.com/matteoscurati/harma/issues"
+    "url": "https://github.com/parmenide-ai/harma/issues"
   },
   "type": "module",
   "bin": {
