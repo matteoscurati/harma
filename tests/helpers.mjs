@@ -138,6 +138,12 @@ const VERSION = (name) => `#!/usr/bin/env node
 console.log('${name} 9.9.9');
 `;
 
+const FAKE_AGY = `#!/usr/bin/env node
+if (process.argv[2] === 'models') console.log(process.env.FAKE_AGY_MODELS ?? '');
+else if (process.argv[2] === '--version') console.log('agy 1.5.12');
+else process.exit(1);
+`;
+
 export const CODEXBAR_FIXTURE = [
   { provider: 'claude', source: 'web', usage: { secondary: { usedPercent: 11, resetsAt: '2026-11-10T00:00:00Z' }, accountEmail: 'someone@example.com', identity: { accountEmail: 'someone@example.com' } } },
   { provider: 'codex', source: 'oauth', usage: { secondary: { usedPercent: 85, resetsAt: '2026-11-09T00:00:00Z' } }, openaiDashboard: { signedInEmail: 'someone@example.com', accountID: 'acct_123' }, credits: { remaining: 40 } },
@@ -151,7 +157,7 @@ export function sandbox({ codexbar = CODEXBAR_FIXTURE, bins = ['herdr', 'hc', 'c
   const bin = join(root, 'bin');
   const project = join(root, 'project');
   for (const d of [home, bin, project]) mkdirSync(d, { recursive: true });
-  const files = { herdr: FAKE_HERDR, hc: FAKE_HC, codexbar: fakeCodexbar(codexbar), claude: VERSION('claude'), codex: VERSION('codex-cli'), kimi: VERSION('kimi'), agy: VERSION('agy') };
+  const files = { herdr: FAKE_HERDR, hc: FAKE_HC, codexbar: fakeCodexbar(codexbar), claude: VERSION('claude'), codex: VERSION('codex-cli'), kimi: VERSION('kimi'), agy: FAKE_AGY };
   for (const name of bins) {
     const p = join(bin, name);
     writeFileSync(p, files[name]);

@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-11-18",
-  "registry_updated": "2026-11-18",
+  "generated_at": "2026-11-19",
+  "registry_updated": "2026-11-19",
   "registry_dates": {
-    "models": "2026-11-18",
-    "transports": "2026-11-18",
-    "sources": "2026-11-16"
+    "models": "2026-11-19",
+    "transports": "2026-11-19",
+    "sources": "2026-11-19"
   },
   "source": "controller-models registry",
   "attribution": "Intelligence Index and cost per task: Artificial Analysis (https://artificialanalysis.ai/)",
@@ -964,6 +964,40 @@
         "index_version": "5.0.1"
       }
     },
+    "gemini-4-neon": {
+      "provider": "google",
+      "display_name": "Gemini 4 Neon",
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "effort_default": "high",
+      "pricing": {
+        "input": 3,
+        "output": 15,
+        "source": "google-neon-pricing",
+        "verified_on": "2026-11-19"
+      },
+      "aa": {
+        "slug": "gemini-4-neon",
+        "index": {
+          "high": 59.6,
+          "low": 44.1,
+          "medium": 54.9,
+          "xhigh": 61.4
+        },
+        "cost_per_task": {
+          "high": 3.7427,
+          "low": 0.7452,
+          "medium": 1.9046,
+          "xhigh": 6.4448
+        },
+        "date": "2026-11-19",
+        "index_version": "5.0.1"
+      }
+    },
     "qwen4-max": {
       "provider": "alibaba",
       "display_name": "Qwen4 Max",
@@ -1177,7 +1211,7 @@
         "max"
       ],
       "billing": "subscription",
-      "notes": "Use exact level IDs from agy models. Hydrogen supports low/medium/high/xhigh, Carbon low/medium/high. Carbon IDs are documented by Google but absent from this account; optional selections require an exact inventory match, never an API fallback or Orchestrator substitution.",
+      "notes": "Use exact level IDs from agy models. Hydrogen and Neon support low/medium/high/xhigh; Carbon supports low/medium/high. Neon was visible at all four levels on the checked account. Carbon remained absent from that inventory. Account access is checked by exact ID.",
       "source": "agy models / agy --help 1.5.6; agy-headless",
       "verified_on": "2026-11-13",
       "models": {
@@ -1225,6 +1259,21 @@
             "low",
             "medium",
             "high"
+          ]
+        },
+        "gemini-4-neon": {
+          "name": "gemini-4-neon-high",
+          "names": {
+            "low": "gemini-4-neon-low",
+            "medium": "gemini-4-neon-medium",
+            "high": "gemini-4-neon-high",
+            "xhigh": "gemini-4-neon-xhigh"
+          },
+          "effort_values": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
           ]
         }
       }
