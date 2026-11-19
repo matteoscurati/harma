@@ -41,6 +41,10 @@ The screen lists the orchestrator first, then one row per job, each with the pro
 
 Each model is shown with its best AA Intelligence Index and its provider's credit state. Each effort level is shown with its index and cost per task. A job can also be set to "no model", and `dispatch` then refuses that job.
 
+For Gemini 4 Neon, choose `agy:gemini-4-neon` and an effort. Harma lists the
+efforts available to your Antigravity account and checks the exact ID again
+before starting an agent.
+
 ## Use several models for one job
 
 A job can hold up to five models in order of preference. When you open a job, its list appears with these keys:

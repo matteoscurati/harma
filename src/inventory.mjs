@@ -1,12 +1,19 @@
 // What this machine can run: agent CLIs on PATH, their models, their efforts.
 // Codex lists its models and efforts in ~/.codex/models_cache.json (machine
-// source). The other CLIs do not list models offline, so their models come
-// from the catalog and are reported with that source.
+// source). Neon also requires an exact match in the Antigravity account's
+// model inventory. Other models come from the catalog.
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { which, run, readJson, now } from './util.mjs';
 import { harnesses } from './catalog.mjs';
 import { meta } from './harness.mjs';
+
+export const AGY_NEON = 'gemini-4-neon';
+
+export async function agyModelIds(binary, env) {
+  const result = await run(binary, ['models'], { env, timeout: 10_000 });
+  return new Set(result.ok ? result.stdout.split('\n').map((line) => line.split('\t', 1)[0].trim()) : []);
+}
 
 export async function inventory({ catalog, env = process.env, config = {}, versions = true } = {}) {
   const hs = harnesses(catalog);
@@ -29,6 +36,8 @@ export async function inventory({ catalog, env = process.env, config = {}, versi
     if (state !== 'installato') continue;
 
     const machine = name === 'codex' ? codexModels(env) : null;
+    const hasNeon = name === 'agy' && h.models?.[AGY_NEON];
+    const agyIds = hasNeon ? await agyModelIds(path, env) : null;
     const models = machine ?? Object.keys(h.models ?? {}).map((id) => {
       const def = catalog.models?.[id]?.effort_default ?? null;
       // A CLI with no effort control runs at its own default: list only that.
@@ -43,6 +52,12 @@ export async function inventory({ catalog, env = process.env, config = {}, versi
       };
     });
     for (const mm of models) {
+      if (agyIds && mm.model === AGY_NEON) {
+        mm.efforts = mm.efforts.filter((effort) => agyIds.has(h.models[AGY_NEON].names?.[effort]));
+        if (!mm.efforts.length) continue;
+        if (!mm.efforts.includes(mm.default)) mm.default = null;
+        mm.source = 'agy models';
+      }
       rows.push({
         harness: name,
         model: mm.model,

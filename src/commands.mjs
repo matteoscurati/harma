@@ -6,7 +6,7 @@ import {
   projectRoot, loadConfig, saveConfig, appendEvent, readEvents, agentsFromEvents,
   writeCache, readCache, hasProject, DEFAULT_CONFIG,
 } from './state.mjs';
-import { inventory } from './inventory.mjs';
+import { AGY_NEON, agyModelIds, inventory } from './inventory.mjs';
 import { collectCredits } from './credits.mjs';
 import { rankRows, refreshFromAA } from './rank.mjs';
 import { route, taskProfile, TASK_PROFILES } from './route.mjs';
@@ -249,7 +249,8 @@ export async function cmdDispatch(flags, opts = {}) {
   const prompt = flags['prompt-file'] ? readFileSync(flags['prompt-file'], 'utf8') : flags.prompt ?? null;
   const cwd = resolve(flags.cwd ?? c.root);
   const spec = launchSpec(pick, c.catalog);
-  if (!which(spec.argv[0], c.env)) {
+  const binary = which(spec.argv[0], c.env);
+  if (!binary) {
     throw new HarmaError(`${spec.argv[0]} non è installato su questa macchina`, { hint: 'Vedi harma models per le CLI disponibili' });
   }
   const plan = {
@@ -276,6 +277,12 @@ export async function cmdDispatch(flags, opts = {}) {
     return { needsConfirmation: true, plan, exitCode: EXIT_NEEDS_CONFIRM };
   }
 
+  if (pick.harness === 'agy' && pick.model === AGY_NEON) {
+    const models = await agyModelIds(binary, c.env);
+    if (!models.has(spec.modelId)) {
+      throw new HarmaError(`agy models non espone ${spec.modelId}`, { hint: 'Verifica il livello e il piano Antigravity del tuo account' });
+    }
+  }
   const backend = opts.backend ?? await selectBackend({ choice: flags.backend, config: cfg, env: c.env });
   const project = projectId(c.root);
   const startedMs = Date.now();

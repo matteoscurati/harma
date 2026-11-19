@@ -204,6 +204,23 @@ test('dispatch without consent starts nothing and exits 3', async () => {
   assert.equal(sb.state().herdr, undefined); // herdr never called
 });
 
+test('Neon inventory and dispatch require the exact account-enabled effort ID', async (t) => {
+  const sb = sandbox({ bins: ['herdr', 'claude', 'agy'] });
+  t.after(() => rmSync(sb.root, { recursive: true, force: true }));
+  await run(sb, ['init', '--orchestrator', 'claude:claude-opus-5-5']);
+  const env = { ...sb.env, FAKE_AGY_MODELS: 'gemini-4-neon-high\tGemini 4 Neon (High)\ngemini-4-neon-xhigh-extra' };
+  sb.clear();
+  assert.equal(await run(sb, ['models', '--json'], { env }), 0);
+  const neon = JSON.parse(sb.output()).models.find((row) => row.model === 'gemini-4-neon');
+  assert.deepEqual(neon?.efforts, ['high']);
+
+  const dispatch = ['dispatch', '--name', 'neon', '--model', 'agy:gemini-4-neon', '--effort', 'xhigh', '--yes'];
+  assert.equal(await run(sb, dispatch, { env }), 1);
+  assert.equal(agents(sb).length, 0);
+  assert.equal(await run(sb, dispatch, { env: { ...env, FAKE_AGY_MODELS: 'gemini-4-neon-xhigh\tGemini 4 Neon (XHigh)' } }), 0);
+  assert.deepEqual(sb.state().herdr.agents[0].args, ['--model', 'gemini-4-neon-xhigh', '--effort', 'xhigh']);
+});
+
 test('dispatch --yes on herdr opens one tab per agent, records the session and sends the task', async () => {
   const sb = sandbox();
   await run(sb, ['init', '--orchestrator', 'claude:claude-opus-5-5', '--effort', 'high', '--backend', 'herdr']);

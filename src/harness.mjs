@@ -49,7 +49,7 @@ export function effortValues(harness, model, catalog) {
 
 /**
  * The argv and env that start <harness> on <model> at <effort>.
- * Returns {argv, env, effortApplied, sessionId, notes}.
+ * Returns {argv, modelId, env, effortApplied, sessionId, notes}.
  */
 export function launchSpec({ harness, model, effort }, catalog, { sessionId } = {}) {
   const h = harnesses(catalog)[harness];
@@ -85,7 +85,7 @@ export function launchSpec({ harness, model, effort }, catalog, { sessionId } = 
     sid = sessionId ?? randomUUID();
     argv.push(m.presetSession, sid);
   }
-  return { argv, env, effortApplied, sessionId: sid, notes, billing: h.billing };
+  return { argv, modelId: name, env, effortApplied, sessionId: sid, notes, billing: h.billing };
 }
 
 export function resumeArgv(harness, sessionId) {
