@@ -1,11 +1,11 @@
 import {
   cmdInit, cmdModels, cmdCredits, cmdRank, cmdRoute, cmdDispatch, cmdSend, cmdRead,
-  cmdStatus, cmdCosts, cmdCleanup, cmdResume, cmdSelect,
+  cmdStatus, cmdCosts, cmdCleanup, cmdResume, cmdSelect, cmdTrust,
 } from './commands.mjs';
 import { cmdInstall, cmdUninstall, cmdDoctor } from './install.mjs';
 import { HarmaError } from './util.mjs';
 
-const BOOLEAN = new Set(['json', 'yes', 'wait', 'refresh', 'dry-run', 'force', 'all', 'print-only', 'help', 'version', 'workspace', 'open', 'accept', 'show', 'close-tab']);
+const BOOLEAN = new Set(['json', 'yes', 'wait', 'refresh', 'dry-run', 'force', 'all', 'print-only', 'help', 'version', 'workspace', 'open', 'accept', 'show', 'close-tab', 'worktree', 'trust-project']);
 
 export function parseArgs(argv) {
   const flags = { _: [] };
@@ -30,6 +30,8 @@ Uso: harma <comando> [opzioni]   (--json su ogni comando per output leggibile da
 
 Progetto
   init --orchestrator <harness>:<model> --effort <level> [--backend auto|herdr|hc] [--policy confirm|auto-within-budget]
+       [--layout auto|workspace|tab|split[:down]] [--trust-project]
+  trust [on|off]                 harma risponde (on) o no (off) al dialogo "fidati della cartella" degli agenti
 
 Conoscere le risorse
   models                         CLI di agenti, modelli ed effort su questa macchina
@@ -45,6 +47,9 @@ Scegliere i modelli (l'utente valida o cambia le proposte)
 
 Delegare (con policy "confirm" serve --yes, dopo il consenso dell'utente)
   dispatch --name <n> (--model h:m [--effort e] | --task-type <tipo>) [--prompt "…" | --prompt-file f] [--wait] [--yes]
+           [--layout auto|workspace|tab|split[:down]] [--worktree [--branch b]]
+                                 layout auto: dentro herdr un tab nel workspace dell'orchestratore,
+                                 fuori un workspace per progetto; --worktree: checkout git separato
   send <nome> "<testo>" [--wait] [--yes]
   read <nome> [--lines N]
 
@@ -54,7 +59,7 @@ Sorvegliare
 
 Pulire e riprendere
   cleanup [--dry-run] [--agent <nome>] [--force] [--workspace]   salva l'id di sessione e chiude le finestre finite
-  resume <nome> [--yes] [--print-only]             riapre la sessione salvata con il suo contesto
+  resume <nome> [--yes] [--print-only] [--layout …] riapre la sessione salvata con il suo contesto
 
 Installazione
   install [--target claude|codex|both] [--force]   installa la skill
@@ -65,7 +70,7 @@ Installazione
 const COMMANDS = {
   init: cmdInit, models: cmdModels, credits: cmdCredits, rank: cmdRank, route: cmdRoute,
   dispatch: cmdDispatch, send: cmdSend, read: cmdRead, status: cmdStatus, costs: cmdCosts,
-  cleanup: cmdCleanup, resume: cmdResume, select: cmdSelect, install: cmdInstall, uninstall: cmdUninstall, doctor: cmdDoctor,
+  cleanup: cmdCleanup, resume: cmdResume, select: cmdSelect, trust: cmdTrust, install: cmdInstall, uninstall: cmdUninstall, doctor: cmdDoctor,
 };
 
 export async function main(argv, opts = {}) {

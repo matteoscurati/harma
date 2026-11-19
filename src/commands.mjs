@@ -10,7 +10,8 @@ import { inventory } from './inventory.mjs';
 import { collectCredits } from './credits.mjs';
 import { rankRows, refreshFromAA } from './rank.mjs';
 import { route, taskProfile, TASK_PROFILES } from './route.mjs';
-import { selectBackend, HerdrBackend, HcBackend, projectId, checkAgentName } from './backends.mjs';
+import { selectBackend, HerdrBackend, HcBackend, projectId, checkAgentName, LAYOUTS } from './backends.mjs';
+import { trustableFolder } from './trust.mjs';
 import { usageFor, estimateCost, findCodexSession } from './usage.mjs';
 import { table, HarmaError, now, which, readJson, run } from './util.mjs';
 import { modelOptions, selectionRows, applySelection, parseSetSpec, describe, describePick, ORCHESTRATOR, rosterPicks, choosePick } from './roster.mjs';
@@ -52,19 +53,48 @@ export async function cmdInit(flags, opts = {}) {
   }
   cfg.orchestrator = { harness: t.harness, model: t.model, effort, set_at: now() };
   if (flags.backend) cfg.backend = flags.backend;
+  if (flags.layout) {
+    if (!LAYOUTS.includes(String(flags.layout).split(':')[0])) throw new HarmaError(`--layout: ${LAYOUTS.join(' | ')} (split:down per dividere in basso)`);
+    cfg.herdr = { ...(cfg.herdr ?? {}), layout: flags.layout };
+  }
+  if (flags['trust-project']) cfg.trust_project = true;
   if (flags.policy) {
     if (!['confirm', 'auto-within-budget'].includes(flags.policy)) throw new HarmaError('--policy: confirm | auto-within-budget');
     cfg.dispatch_policy = flags.policy;
   }
   saveConfig(root, cfg);
   appendEvent(root, { type: 'orchestrator', ...cfg.orchestrator });
+  if (flags['trust-project']) appendEvent(root, { type: 'trust_policy', value: true, by: 'utente (harma init --trust-project)' });
   emit({ ...c, root }, flags, cfg, () => [
     `Progetto harma: ${root}`,
     `Orchestratore: ${t.harness}:${t.model} @ ${effort ?? 'default'}`,
-    `Backend: ${cfg.backend} · Policy di delega: ${cfg.dispatch_policy}`,
+    `Backend: ${cfg.backend} · Layout herdr: ${cfg.herdr?.layout ?? 'auto'} · Policy di delega: ${cfg.dispatch_policy}`,
+    `Fiducia nella cartella: ${cfg.trust_project ? 'harma risponde per gli agenti (harma trust off per disattivare)' : 'la dà l\'utente (harma trust on per delegarla a harma)'}`,
     'Prossimi passi: harma models · harma credits · harma rank',
   ].join('\n'));
   return cfg;
+}
+
+/**
+ * The project's trust policy: whether harma answers the folder-trust dialog
+ * of the agents it starts. The user's decision; an orchestrator never turns
+ * it on by itself.
+ */
+export async function cmdTrust(flags, opts = {}) {
+  const c = ctx(opts);
+  const cfg = loadConfig(c.root, { required: true });
+  const want = flags._[0];
+  if (want && !['on', 'off'].includes(want)) throw new HarmaError('Uso: harma trust [on|off]');
+  if (want) {
+    cfg.trust_project = want === 'on';
+    saveConfig(c.root, cfg);
+    appendEvent(c.root, { type: 'trust_policy', value: cfg.trust_project, by: `utente (harma trust ${want})` });
+  }
+  const data = { trust_project: Boolean(cfg.trust_project), root: c.root };
+  emit(c, flags, data, () => (cfg.trust_project
+    ? `Fiducia attiva per ${c.root}: harma risponde "mi fido" al dialogo di Claude Code, Codex e Antigravity, solo per questa cartella e i worktree che crea. I permessi sugli strumenti restano all'utente.`
+    : `Fiducia disattivata per ${c.root}: se un agente chiede di fidarsi della cartella, aspetta l'utente.`));
+  return data;
 }
 
 // 2 ─ inventory ────────────────────────────────────────────────────────────
@@ -227,6 +257,9 @@ export async function cmdDispatch(flags, opts = {}) {
     harness: pick.harness, model: pick.model, effort: pick.effort, why: pick.why,
     cwd, argv: spec.argv, env: spec.env, notes: spec.notes,
     prompt_chars: prompt?.length ?? 0, policy: cfg.dispatch_policy,
+    layout: flags.worktree ? 'worktree' : (flags.layout ?? cfg.herdr?.layout ?? 'auto'),
+    worktree: flags.worktree ? { branch: flags.branch ?? `harma/${flags.name}` } : null,
+    trust_project: Boolean(cfg.trust_project),
   };
 
   const gate = await dispatchGate(c, cfg, pick.harness, flags, opts);
@@ -236,6 +269,7 @@ export async function cmdDispatch(flags, opts = {}) {
       `Motivo: ${gate.reason}`,
       `Agente ${plan.agent}: ${plan.harness}:${plan.model} @ ${plan.effort ?? 'default'} (${plan.why})`,
       `Comando: ${plan.argv.join(' ')}${Object.keys(plan.env).length ? `  env ${JSON.stringify(plan.env)}` : ''}`,
+      `Dove: ${plan.worktree ? `worktree su branch ${plan.worktree.branch}` : `layout ${plan.layout}`} · fiducia nella cartella: ${plan.trust_project ? 'la dà harma (policy del progetto)' : 'la dà l\'utente'}`,
       ...plan.notes.map((n) => `Nota: ${n}`),
       'Se l\'utente approva, ripeti lo stesso comando con --yes.',
     ].join('\n'));
@@ -245,14 +279,20 @@ export async function cmdDispatch(flags, opts = {}) {
   const backend = opts.backend ?? await selectBackend({ choice: flags.backend, config: cfg, env: c.env });
   const project = projectId(c.root);
   const startedMs = Date.now();
-  const started = await backend.start({ name: flags.name, cwd, argv: spec.argv, env: spec.env, harness: pick.harness, root: c.root, project });
+  if (plan.worktree && backend.name !== 'herdr') throw new HarmaError('--worktree richiede il backend herdr');
+  const started = await backend.start({
+    name: flags.name, cwd, argv: spec.argv, env: spec.env, harness: pick.harness, root: c.root, project,
+    layout: plan.layout === 'worktree' ? undefined : plan.layout, worktree: plan.worktree,
+  });
   if (started.workspaceCreated) { cfg.herdr = { ...(cfg.herdr ?? {}), workspace_id: started.workspace }; saveConfig(c.root, cfg); }
+  const agentCwd = started.cwd ?? cwd;
   appendEvent(c.root, {
     type: 'started', agent: flags.name, harness: pick.harness, model: pick.model, effort: pick.effort,
-    task_type: flags['task-type'] ?? null, backend: backend.name, target: { name: started.target, tab: started.tab ?? null, pane: started.pane ?? null, address: started.address ?? null },
-    cwd, session_id: spec.sessionId, why: pick.why, confirmed_by: gate.by, started_ms: startedMs,
+    task_type: flags['task-type'] ?? null, backend: backend.name, target: targetOf(started),
+    cwd: agentCwd, worktree: started.worktree ?? null, session_id: spec.sessionId, why: pick.why, confirmed_by: gate.by, started_ms: startedMs,
   });
-  let sid = spec.sessionId ?? await discoverSession(backend, { name: started.target, harness: pick.harness, cwd, sinceMs: startedMs, env: c.env });
+  const trusted = await maybeTrust(c, cfg, backend, { agent: flags.name, harness: pick.harness, cwd: agentCwd, started });
+  let sid = spec.sessionId ?? await discoverSession(backend, { name: started.target, harness: pick.harness, cwd: agentCwd, sinceMs: startedMs, env: c.env });
   if (sid && sid !== spec.sessionId) appendEvent(c.root, { type: 'session', agent: flags.name, session_id: sid, source: backend.name });
   let promptState = prompt ? 'sent' : 'none';
   if (prompt) {
@@ -268,12 +308,14 @@ export async function cmdDispatch(flags, opts = {}) {
   }
   if (!sid && promptState === 'sent') {
     // Codex registers its session on the first turn: look again now.
-    sid = await discoverSession(backend, { name: started.target, harness: pick.harness, cwd, sinceMs: startedMs, env: c.env });
+    sid = await discoverSession(backend, { name: started.target, harness: pick.harness, cwd: agentCwd, sinceMs: startedMs, env: c.env });
     if (sid) appendEvent(c.root, { type: 'session', agent: flags.name, session_id: sid, source: backend.name });
   }
-  const result = { started: true, plan, target: started, session_id: sid ?? null, prompt: promptState, exitCode: promptState === 'blocked' ? EXIT_BLOCKED : 0 };
+  const result = { started: true, plan, target: started, session_id: sid ?? null, prompt: promptState, trust: trusted, exitCode: promptState === 'blocked' ? EXIT_BLOCKED : 0 };
   emit(c, flags, result, () => [
-    `Avviato ${flags.name}: ${pick.harness}:${pick.model} @ ${pick.effort ?? 'default'} su ${backend.name} (${started.tab ?? started.address ?? started.target})`,
+    `Avviato ${flags.name}: ${pick.harness}:${pick.model} @ ${pick.effort ?? 'default'} su ${backend.name} (${where(started)})`,
+    ...(started.worktree ? [`Worktree: ${started.worktree.path} (branch ${started.worktree.branch})`] : []),
+    ...(trusted ? [`Fiducia nella cartella: ${trusted.ok ? 'data (policy del progetto)' : `non data — ${trusted.detail}`}`] : []),
     `Sessione: ${sid ?? 'non ancora nota (verrà letta alla chiusura)'}`,
     promptState === 'sent' ? `Compito inviato (${prompt.length} caratteri)${flags.wait ? '; atteso fino a stato stabile' : ''}.`
       : promptState === 'blocked' ? `BLOCCATO: ${flags.name} aspetta una risposta (es. fiducia nella cartella) e il compito NON è stato inviato.\nLeggi con: harma read ${flags.name} — chiedi all'utente di rispondere nel suo terminale, poi: harma send ${flags.name} "<compito>" --yes`
@@ -281,6 +323,36 @@ export async function cmdDispatch(flags, opts = {}) {
     ...plan.notes.map((n) => `Nota: ${n}`),
   ].join('\n'));
   return result;
+}
+
+/** What the event log keeps of a started terminal. */
+function targetOf(started) {
+  return {
+    name: started.target, tab: started.tab ?? null, pane: started.pane ?? null, address: started.address ?? null,
+    layout: started.layout ?? null, workspace: started.workspace ?? null,
+  };
+}
+
+function where(started) {
+  if (started.layout === 'split') return `pane ${started.pane} accanto all'orchestratore`;
+  if (started.layout === 'tab') return `tab ${started.tab} nel workspace dell'orchestratore`;
+  if (started.layout === 'worktree') return `tab ${started.tab} nel workspace del worktree`;
+  return started.tab ?? started.address ?? started.target;
+}
+
+/**
+ * Started but blocked: with the project's trust policy on, answer the
+ * folder-trust dialog (and only that one) for the project folder or the
+ * agent's own worktree. Returns null when nothing was attempted.
+ */
+async function maybeTrust(c, cfg, backend, { agent, harness, cwd, started }) {
+  if (!started.blocked || !cfg.trust_project || typeof backend.answerTrust !== 'function') return null;
+  const res = trustableFolder(cwd, c.root, started.worktree?.path)
+    ? await backend.answerTrust({ target: started.target, harness, cwd })
+    : { ok: false, detail: `${cwd} è fuori dal progetto` };
+  appendEvent(c.root, { type: res.ok ? 'trusted' : 'trust_skipped', agent, cwd, detail: res.detail, by: 'policy trust_project' });
+  if (res.ok) started.blocked = false;
+  return res;
 }
 
 /** Policy check. confirm: only --yes. auto-within-budget: provider credits ok/ampio. */
@@ -498,10 +570,11 @@ export async function cmdCleanup(flags, opts = {}) {
     let closed = { ok: true, detail: 'già chiuso nel backend' };
     if (status !== 'non trovato') {
       const b = opts.backend?.name === a.backend ? opts.backend : backendFor(a, cfg, c.env);
-      closed = await b.close({ target: a.target?.name ?? a.name, tab: a.target?.tab });
+      closed = await b.close({ ...(a.target ?? {}), target: a.target?.name ?? a.name });
     }
     if (closed.ok) appendEvent(c.root, { type: 'closed', agent: a.name, session_id: sid, last_status: status });
-    report.push({ agente: a.name, azione: closed.ok ? 'chiuso' : 'errore', motivo: closed.detail, sessione: sid });
+    const kept = closed.ok && a.worktree ? ` · worktree lasciato in ${a.worktree.path} (branch ${a.worktree.branch}): integra il lavoro, poi git worktree remove` : '';
+    report.push({ agente: a.name, azione: closed.ok ? 'chiuso' : 'errore', motivo: closed.detail + kept, sessione: sid });
   }
   // --workspace: close harma's own herdr workspace once no harma agent is open.
   if (flags.workspace && !flags['dry-run'] && cfg.herdr?.workspace_id) {
@@ -547,10 +620,11 @@ export async function cmdResume(flags, opts = {}) {
     return { needsConfirmation: !gate.allowed, argv, exitCode: gate.allowed ? 0 : EXIT_NEEDS_CONFIRM };
   }
   const backend = opts.backend ?? await selectBackend({ choice: flags.backend ?? a.backend, config: cfg, env: c.env });
-  const started = await backend.start({ name, cwd: a.cwd, argv, env: spec.env, harness: a.harness, root: c.root, project: projectId(c.root) });
+  const started = await backend.start({ name, cwd: a.cwd, argv, env: spec.env, harness: a.harness, root: c.root, project: projectId(c.root), layout: flags.layout ?? cfg.herdr?.layout ?? 'auto' });
   if (started.workspaceCreated) { cfg.herdr = { ...(cfg.herdr ?? {}), workspace_id: started.workspace }; saveConfig(c.root, cfg); }
-  appendEvent(c.root, { type: 'resumed', agent: name, session_id: a.session_id, backend: backend.name, target: { name: started.target, tab: started.tab ?? null, pane: started.pane ?? null, address: started.address ?? null }, confirmed_by: gate.by });
-  c.out(flags.json ? JSON.stringify({ resumed: true, argv }) : `Ripreso ${name} (sessione ${a.session_id}) su ${backend.name}.`);
+  appendEvent(c.root, { type: 'resumed', agent: name, session_id: a.session_id, backend: backend.name, target: targetOf(started), confirmed_by: gate.by });
+  const trusted = await maybeTrust(c, cfg, backend, { agent: name, harness: a.harness, cwd: a.cwd, started: { ...started, worktree: a.worktree } });
+  c.out(flags.json ? JSON.stringify({ resumed: true, argv, trust: trusted }) : `Ripreso ${name} (sessione ${a.session_id}) su ${backend.name} (${where(started)}).`);
   return { resumed: true, argv };
 }
 
@@ -638,14 +712,14 @@ async function openSelect(c, cfg, flags, opts) {
   const backend = opts.backend ?? await selectBackend({ choice: flags.backend, config: cfg, env: c.env });
   let where;
   if (backend.name === 'herdr') {
-    const tab = await backend.openTab({ root: c.root, project: projectId(c.root), label: 'harma-select', command: cmd });
+    const tab = await backend.openTab({ root: c.root, project: projectId(c.root), label: 'harma-select', command: cmd, layout: flags.layout ?? cfg.herdr?.layout ?? 'auto' });
     if (tab.workspaceCreated) {
       // Re-read: the TUI may already have saved choices into config.json.
       const fresh = loadConfig(c.root);
       fresh.herdr = { ...(fresh.herdr ?? {}), workspace_id: tab.workspace };
       saveConfig(c.root, fresh);
     }
-    where = `tab herdr ${tab.tab} (in primo piano)`;
+    where = tab.layout === 'split' ? `pane herdr ${tab.pane} (in primo piano)` : `tab herdr ${tab.tab} (in primo piano)`;
   } else {
     await backend.exec(['run', '--bg', '--json', '--name', 'harma-select', '--cwd', c.root, '--no-parent', '--', process.execPath, BIN, 'select']);
     where = 'terminale hc "harma-select": aprilo con  hc attach harma-select';

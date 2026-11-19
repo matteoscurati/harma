@@ -14,6 +14,12 @@ Model targets are written `harness:model`, where the harness is the CLI that run
 
 - `--backend auto|herdr|hc`: terminal backend; `auto` (default) uses herdr when it runs, otherwise `hc`
 - `--policy confirm|auto-within-budget`: dispatch policy; `confirm` is the default, see [consent](how-harma-decides.md#consent)
+- `--layout auto|workspace|tab|split[:down]`: where herdr agents open by default; see [where agents open](agents-and-sessions.md#where-agents-open)
+- `--trust-project`: harma answers the folder-trust dialog of the agents it starts; see [folder trust](agents-and-sessions.md#folder-trust)
+
+| Command | Description |
+|---|---|
+| `trust [on\|off]` | Shows or sets the project's trust policy, and records who changed it |
 
 ## Know your resources
 
@@ -55,6 +61,8 @@ These commands start or instruct an agent, so under the `confirm` policy they ne
 - `--cwd path`: working folder for the agent (default: the project root)
 - `--wait`: waits until the agent is idle again; `--timeout seconds` (default 600)
 - `--author harness:model`: with `--task-type review` and no saved choice, excludes that vendor
+- `--layout auto|workspace|tab|split[:down]`: where the agent opens in herdr (default: the project's layout, `auto`)
+- `--worktree [--branch name]`: gives the agent its own git worktree on `harma/agent_name`, or the branch you name (herdr only)
 
 Agent names are lowercase, start with a letter, use `a-z`, `0-9`, `_` or `-`, are at most 32 characters, and are unique among open agents.
 

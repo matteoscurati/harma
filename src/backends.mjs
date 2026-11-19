@@ -5,13 +5,18 @@
 //   prompt(target, text, {wait, timeoutSec})
 //   read(target, lines)                 -> text
 //   close(target)                       -> {ok}
-// herdr: the full app (workspaces, tabs, panes); one tab per agent in a
-// per-project workspace, so closing an agent closes its window.
+// herdr: the full app (workspaces, tabs, panes). Where an agent goes is the
+// layout: inside herdr, next to the orchestrator (a tab in its workspace, or
+// a split beside its pane); outside, a per-project workspace. An agent can
+// also get its own git worktree, which herdr opens as a grouped workspace.
 // hc (herdr-core): headless terminals; ownership through labels.
 import { basename } from 'node:path';
 import { createHash } from 'node:crypto';
 import { run, which, parseJson, HarmaError } from './util.mjs';
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 import { meta } from './harness.mjs';
+import { readTrustDialog } from './trust.mjs';
 
 export function projectId(root) {
   return `${basename(root).toLowerCase().replace(/[^a-z0-9_-]/g, '-').slice(0, 20)}-${createHash('sha1').update(root).digest('hex').slice(0, 6)}`;
@@ -37,12 +42,16 @@ function okJson(res, what) {
 }
 
 // ---------------------------------------------------------------- herdr
+export const LAYOUTS = ['auto', 'workspace', 'tab', 'split'];
+
 export class HerdrBackend {
   constructor({ bin = 'herdr', env = process.env, config = {} } = {}) {
     this.name = 'herdr';
     this.bin = bin;
     this.env = env;
     this.config = config; // project config (holds herdr.workspace_id)
+    this.trustPolls = 30; // after answering a trust dialog: up to 30 × 500 ms
+    this.trustPollMs = 500;
   }
 
   exec(args, opts = {}) { return run(this.bin, args, { env: this.env, ...opts }); }
@@ -98,24 +107,118 @@ export class HerdrBackend {
     return { tabId, paneId };
   }
 
-  async start({ name, cwd, argv, env = {}, harness, root, project }) {
+  /**
+   * Where agents go. auto: inside herdr (HERDR_ENV=1 with a workspace id),
+   * a tab in the orchestrator's workspace; outside, the project workspace.
+   * Returns {mode, direction}.
+   */
+  layoutFor(layout = 'auto') {
+    const inside = this.env.HERDR_ENV === '1' && Boolean(this.env.HERDR_WORKSPACE_ID);
+    const [mode, direction = 'right'] = String(layout || 'auto').split(':');
+    if (!LAYOUTS.includes(mode) || !['right', 'down'].includes(direction)) {
+      throw new HarmaError(`Layout sconosciuto: ${layout}`, { hint: 'auto | workspace | tab | split | split:down' });
+    }
+    if (mode === 'auto') return { mode: inside ? 'tab' : 'workspace', direction };
+    if ((mode === 'tab' || mode === 'split') && !inside) {
+      throw new HarmaError(`Layout ${mode}: harma non gira dentro herdr`, { hint: 'Avvia l\'orchestratore in un pane herdr, oppure usa --layout workspace' });
+    }
+    if (mode === 'split' && !this.env.HERDR_PANE_ID) throw new HarmaError('Layout split: manca HERDR_PANE_ID');
+    return { mode, direction };
+  }
+
+  /** A terminal for one process, per layout. Returns {tabId, paneId, layout, workspace, workspaceCreated}. */
+  async place({ layout, root, project, cwd, label, env = {}, focus = false }) {
+    const { mode, direction } = this.layoutFor(layout);
+    if (mode === 'workspace') {
+      const ws = { ...await this.ensureWorkspace(root, project, { focus }), cwd: root };
+      const t = await this.placeTab(ws, { cwd, label, env, focus });
+      return { ...t, layout: 'workspace', workspace: ws.id, workspaceCreated: ws.created };
+    }
+    if (mode === 'tab') {
+      const t = await this.placeTab({ id: this.env.HERDR_WORKSPACE_ID, created: false }, { cwd, label, env, focus });
+      return { ...t, layout: 'tab', workspace: this.env.HERDR_WORKSPACE_ID, workspaceCreated: false };
+    }
+    const args = ['pane', 'split', '--pane', this.env.HERDR_PANE_ID, '--direction', direction, '--cwd', cwd, focus ? '--focus' : '--no-focus'];
+    for (const [k, v] of Object.entries(env)) args.push('--env', `${k}=${v}`);
+    const pane = okJson(await this.exec(args), 'herdr pane split')?.result?.pane;
+    if (!pane?.pane_id) throw new HarmaError('herdr pane split: risposta senza pane_id');
+    await this.exec(['pane', 'rename', pane.pane_id, label]);
+    return { tabId: pane.tab_id ?? null, paneId: pane.pane_id, layout: 'split', workspace: this.env.HERDR_WORKSPACE_ID, workspaceCreated: false };
+  }
+
+  /**
+   * A git worktree for one agent: herdr creates the checkout and opens it as a
+   * workspace grouped with the project's, whose root tab hosts the agent.
+   */
+  async worktree({ root, name, branch, env = {} }) {
+    const res = okJson(await this.exec(['worktree', 'create', '--cwd', root, '--branch', branch, '--label', `harma:${name}`, '--no-focus']), 'herdr worktree create');
+    const r = res?.result ?? {};
+    const path = r.worktree?.path;
+    const id = r.workspace?.workspace_id;
+    if (!path || !id || !r.tab?.tab_id || !r.root_pane?.pane_id) throw new HarmaError('herdr worktree create: risposta incompleta');
+    const ws = { id, created: true, cwd: path, root: { tabId: r.tab.tab_id, paneId: r.root_pane.pane_id } };
+    const t = await this.placeTab(ws, { cwd: path, label: name, env });
+    return { ...t, layout: 'worktree', workspace: id, workspaceCreated: false, worktree: { path, branch: r.worktree.branch ?? branch } };
+  }
+
+  async start({ name, cwd, argv, env = {}, harness, root, project, layout, worktree }) {
     checkAgentName(name);
     const kind = meta(harness).herdrKind;
     if (!kind) throw new HarmaError(`herdr non riconosce ${harness} come agente`, { hint: 'Usa --backend hc per questa CLI' });
-    const ws = { ...await this.ensureWorkspace(root, project), cwd: root };
-    const { tabId, paneId } = await this.placeTab(ws, { cwd, label: name, env });
-    const startArgs = ['agent', 'start', name, '--kind', kind, '--pane', paneId, '--timeout', '60000'];
+    const at = worktree
+      ? await this.worktree({ root, name, branch: worktree.branch, env })
+      : await this.place({ layout, root, project, cwd, label: name, env });
+    const startArgs = ['agent', 'start', name, '--kind', kind, '--pane', at.paneId, '--timeout', '60000'];
     if (argv.length > 1) startArgs.push('--', ...argv.slice(1));
     const started = await this.exec(startArgs, { timeout: 90_000 });
+    let blocked = false;
     if (!started.ok) {
       const err = parseJson(started.stderr);
       // agent_not_ready keeps the agent: it is blocked at startup (e.g. trust dialog).
       if (err?.error?.code !== 'agent_not_ready') {
-        await this.exec(['tab', 'close', tabId]);
+        await this.close({ tab: at.tabId, pane: at.paneId, layout: at.layout, target: name });
         okJson(started, 'herdr agent start');
       }
+      blocked = true;
     }
-    return { target: name, tab: tabId, pane: paneId, workspace: ws.id, workspaceCreated: ws.created };
+    return {
+      target: name, tab: at.tabId, pane: at.paneId, layout: at.layout, workspace: at.workspace,
+      workspaceCreated: at.workspaceCreated, cwd: at.worktree?.path ?? cwd, worktree: at.worktree ?? null, blocked,
+    };
+  }
+
+  /**
+   * Answer the folder-trust dialog of a just-started agent: only when the
+   * screen is that harness's dialog for `cwd`. Moves to the trust option,
+   * checking the selection before each Enter. Returns {ok, detail}.
+   */
+  async answerTrust({ target, harness, cwd }) {
+    const screen = async () => {
+      const res = await this.exec(['agent', 'read', target, '--source', 'visible']);
+      return res.ok ? (parseJson(res.stdout)?.result?.read?.text ?? res.stdout) : '';
+    };
+    let seen = readTrustDialog(harness, await screen(), cwd);
+    if (!seen.dialog) return { ok: false, detail: 'sullo schermo non c\'è il dialogo di fiducia atteso' };
+    if (!seen.path) return { ok: false, detail: `il dialogo non mostra la cartella ${cwd}` };
+    for (let i = 0; i < 4 && !seen.selected; i++) {
+      await this.exec(['agent', 'send-keys', target, 'down']);
+      seen = readTrustDialog(harness, await screen(), cwd);
+      if (!seen.dialog) return { ok: false, detail: 'il dialogo è cambiato mentre harma lo leggeva' };
+    }
+    if (!seen.selected) return { ok: false, detail: 'opzione di fiducia non trovata' };
+    await this.exec(['agent', 'send-keys', target, 'enter']);
+    // herdr may still report the old blocked state for a moment: first the
+    // dialog must leave the screen, then the state must leave blocked.
+    const status = async () => parseJson((await this.exec(['agent', 'get', target])).stdout)?.result?.agent?.agent_status ?? null;
+    let last = null;
+    for (let i = 0; i < this.trustPolls; i++) {
+      if (i) await sleep(this.trustPollMs);
+      if (readTrustDialog(harness, await screen(), cwd).dialog) continue;
+      last = await status();
+      if (last && last !== 'blocked') break;
+    }
+    if (!last || last === 'blocked') return { ok: false, detail: `dopo la fiducia l'agente è ${last ?? 'in stato sconosciuto'}` };
+    return { ok: true, detail: `fiducia data a ${cwd}` };
   }
 
   async list() {
@@ -152,18 +255,21 @@ export class HerdrBackend {
     return data?.result?.text ?? data?.result?.read?.text ?? data?.result?.content ?? res.stdout;
   }
 
-  async close({ tab, target }) {
+  async close({ tab, pane, layout, target }) {
+    if (layout === 'split' && pane) {
+      const res = await this.exec(['pane', 'close', pane]);
+      return { ok: res.ok, detail: res.ok ? 'pane chiuso' : res.stderr.trim() };
+    }
     if (!tab) throw new HarmaError(`Nessun tab registrato per ${target}: harma chiude solo le finestre che ha creato`);
     const res = await this.exec(['tab', 'close', tab]);
     return { ok: res.ok, detail: res.ok ? 'tab chiuso' : res.stderr.trim() };
   }
 
   /** A focused tab in the project workspace running a shell command (used for the select TUI). */
-  async openTab({ root, project, label, command }) {
-    const ws = { ...await this.ensureWorkspace(root, project, { focus: true }), cwd: root };
-    const { tabId, paneId } = await this.placeTab(ws, { cwd: root, label, focus: true });
-    okJson(await this.exec(['pane', 'run', paneId, command]), 'herdr pane run');
-    return { tab: tabId, pane: paneId, workspace: ws.id, workspaceCreated: ws.created };
+  async openTab({ root, project, label, command, layout }) {
+    const at = await this.place({ layout, root, project, cwd: root, label, focus: true });
+    okJson(await this.exec(['pane', 'run', at.paneId, command]), 'herdr pane run');
+    return { tab: at.tabId, pane: at.paneId, layout: at.layout, workspace: at.workspace, workspaceCreated: at.workspaceCreated };
   }
 
   /** Only for the workspace harma created for this project (config.herdr.workspace_id). */

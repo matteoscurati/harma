@@ -17,7 +17,7 @@ These rules protect the user's money, their machine and their trust. They hold e
 2. **Never invent numbers.** Models, efforts, credits, prices and scores come from harma's output, with their source and date. When harma says `sconosciuto`, tell the user it's unknown. A made-up score or balance leads the user to spend money on a wrong premise.
 3. **Close only what harma opened.** `cleanup` touches only the agents recorded in `.harma/agents.jsonl`. Other panes, tabs, workspaces and servers belong to the user.
 4. **Stay the orchestrator.** Agents report to you. Read and check their work before telling the user something is done, because an agent that says "done" may not be.
-5. **Never answer an agent's approval or trust dialog.** Those questions are addressed to the user. Read them and pass them on.
+5. **Never answer an agent's approval or trust dialog yourself.** Those questions are addressed to the user. Read them and pass them on. The one exception is harma's own trust policy: when the user turned it on (`harma init --trust-project` or `harma trust on`), harma itself answers the folder-trust dialog of Claude Code, Codex and Antigravity for the project folder and the worktrees it creates. Never run `harma trust on` unless the user asks for it, and never answer a tool-permission dialog.
 
 ## Workflow
 
@@ -77,6 +77,8 @@ harma dispatch --name <agent-name> --task-type <job> --prompt-file <brief.md> --
 
 With `--task-type` and no `--model`, harma uses the user's list for that job, otherwise the top route candidate. The plan's `why` says which model on the list it took and which it skipped (for example "n.1 … saltato: crediti scarso"). Tell the user when it isn't their first choice. Use `--model <harness>:<model> --effort <level>` only when the user asked for that model.
 
+Where the agent opens: when you run inside herdr, harma opens it as a tab in your own workspace, so the user sees it next to you; outside herdr, in the project workspace `harma:<project>`. Add `--layout split` to put it in a pane beside yours, when the user wants to watch it. For agents that write code in parallel, add `--worktree`: the agent gets its own git checkout on branch `harma/<name>`, so builders don't overwrite each other. Review and merge that branch yourself; harma never deletes a worktree.
+
 Name agents in lowercase, unique among open agents (`planner`, `builder`, `review-1`). Write a self-contained brief: the goal, the files, the constraints, what "done" means, and how to report back, for example "write your result to `.harma/out/<name>.md`". The agent starts with none of your context, so anything you leave out of the brief it will guess.
 
 ### 5. Monitor
@@ -87,7 +89,7 @@ harma read <agent-name> --lines 120
 harma send <agent-name> "<follow-up>" --yes
 ```
 
-`blocked` means the agent waits on a question or an approval: read it and ask the user. `idle` or `done` doesn't prove the task is finished, so read the output and check the work.
+`blocked` means the agent waits on a question or an approval: read it and ask the user. With the trust policy on, a folder-trust dialog at startup is answered by harma; the dispatch output says so (`Fiducia nella cartella: data`). `idle` or `done` doesn't prove the task is finished, so read the output and check the work.
 
 ### 6. Watch cost
 

@@ -26,15 +26,30 @@ const closeTab = (tab) => {
   if (ws && !Object.values(h.tabs).includes(ws)) h.open = h.open.filter((w) => w !== ws);
 };
 if (g === 'workspace' && c === 'get') return (h.open.includes(a[2]) ? ok({ workspace: { workspace_id: a[2] } }) : fail('workspace_not_found', 'workspace ' + a[2] + ' not found'));
-if (g === 'workspace' && c === 'create') { h.ws++; const w = 'w' + h.ws; h.open.push(w); h.tabs[w + ':t0'] = w; h.labels = { ...h.labels, [w + ':t0']: '1' }; return ok({ workspace: { workspace_id: w }, tab: { tab_id: w + ':t0' }, root_pane: { pane_id: w + ':p0' } }); }
+h.paneCwd ??= {};
+const arg = (f) => (a.indexOf(f) >= 0 ? a[a.indexOf(f) + 1] : null);
+if (g === 'workspace' && c === 'create') { h.ws++; const w = 'w' + h.ws; h.open.push(w); h.paneCwd[w + ':p0'] = arg('--cwd'); h.tabs[w + ':t0'] = w; h.labels = { ...h.labels, [w + ':t0']: '1' }; return ok({ workspace: { workspace_id: w }, tab: { tab_id: w + ':t0' }, root_pane: { pane_id: w + ':p0' } }); }
 if (g === 'workspace' && c === 'close') {
   if (!h.open.includes(a[2])) return fail('workspace_not_found', 'workspace ' + a[2] + ' not found');
   h.open = h.open.filter((w) => w !== a[2]); for (const t of Object.keys(h.tabs)) if (h.tabs[t] === a[2]) delete h.tabs[t];
   h.closedWorkspaces = [...(h.closedWorkspaces ?? []), a[2]]; return ok({ closed: a[2] });
 }
-if (g === 'tab' && c === 'create') { h.tab++; const ws = a[a.indexOf('--workspace') + 1]; const t = ws + ':t' + h.tab; h.tabs[t] = ws; h.labels = { ...h.labels, [t]: a[a.indexOf('--label') + 1] }; return ok({ tab: { tab_id: t }, root_pane: { pane_id: ws + ':p' + h.tab } }); }
+if (g === 'tab' && c === 'create') { h.tab++; const ws = a[a.indexOf('--workspace') + 1]; const t = ws + ':t' + h.tab; h.tabs[t] = ws; h.paneCwd[ws + ':p' + h.tab] = arg('--cwd'); h.labels = { ...h.labels, [t]: a[a.indexOf('--label') + 1] }; return ok({ tab: { tab_id: t }, root_pane: { pane_id: ws + ':p' + h.tab } }); }
 if (g === 'tab' && c === 'rename') { if (!wsOf(a[2])) return fail('tab_not_found', 'no tab'); h.labels[a[2]] = a[3]; return ok({ tab: { tab_id: a[2], label: a[3] } }); }
 if (g === 'tab' && c === 'focus') { h.focused = a[2]; return ok({ tab: { tab_id: a[2] } }); }
+if (g === 'pane' && c === 'split') {
+  h.tab++; const from = arg('--pane'); const ws = from.split(':')[0]; const id = ws + ':p' + h.tab;
+  h.paneCwd[id] = arg('--cwd'); h.splits = [...(h.splits ?? []), { from, id, direction: arg('--direction'), env: a.filter((x, i) => a[i - 1] === '--env') }];
+  return ok({ pane: { pane_id: id, tab_id: from.replace(/:p.*/, ':t1'), workspace_id: ws } });
+}
+if (g === 'pane' && c === 'rename') { h.labels = { ...h.labels, [a[2]]: a[3] }; return ok({ pane: { pane_id: a[2] } }); }
+if (g === 'pane' && c === 'close') { h.agents = h.agents.filter((x) => x.pane_id !== a[2]); h.closedPanes = [...(h.closedPanes ?? []), a[2]]; return ok({ closed: a[2] }); }
+if (g === 'worktree' && c === 'create') {
+  h.ws++; const w = 'w' + h.ws; h.open.push(w); h.tabs[w + ':t0'] = w; h.labels = { ...h.labels, [w + ':t0']: '1' };
+  const path = arg('--cwd') + '-wt/' + arg('--branch').split('/').join('-'); h.paneCwd[w + ':p0'] = path;
+  h.worktrees = [...(h.worktrees ?? []), { path, branch: arg('--branch'), label: arg('--label') }];
+  return ok({ type: 'worktree_created', workspace: { workspace_id: w, label: arg('--label') }, tab: { tab_id: w + ':t0' }, root_pane: { pane_id: w + ':p0', tab_id: w + ':t0' }, worktree: { path, branch: arg('--branch') } });
+}
 if (g === 'pane' && c === 'run') return ok({ queued: true });
 if (g === 'tab' && c === 'close') { closeTab(a[2]); return ok({ closed: a[2] }); }
 if (g === 'agent' && c === 'start') {
@@ -45,12 +60,43 @@ if (g === 'agent' && c === 'start') {
   const args = dd >= 0 ? a.slice(dd + 1) : [];
   const si = args.indexOf('--session-id'); const ri = args.indexOf('--resume');
   const sid = si >= 0 ? args[si + 1] : ri >= 0 ? args[ri + 1] : (kind === 'codex' ? 'codex-' + h.starts : null);
-  h.agents.push({ name: a[2], agent: kind, pane_id: pane, tab_id: pane.replace(':p', ':t'), agent_status: 'idle', cwd: '/x', agent_session: sid ? { value: sid } : null, args });
+  const blocked = process.env.FAKE_START_BLOCKED === kind;
+  h.agents.push({ name: a[2], agent: kind, pane_id: pane, tab_id: pane.replace(':p', ':t'), agent_status: blocked ? 'blocked' : 'idle', cwd: '/x', agent_session: sid ? { value: sid } : null, args, dialog: blocked ? { sel: 0, path: process.env.FAKE_DIALOG_PATH || h.paneCwd[pane] || '/x' } : null });
+  if (blocked) return fail('agent_not_ready', 'agent ' + a[2] + ' is blocked during startup and is not ready for prompts');
   return ok({ agent: a[2] });
 }
-if (g === 'agent' && c === 'list') { save(); console.log(JSON.stringify({ result: { agents: h.agents.map(({ args, ...x }) => x) } })); process.exit(0); }
+if (g === 'agent' && c === 'list') { save(); console.log(JSON.stringify({ result: { agents: h.agents.map(({ args, dialog, ...x }) => x) } })); process.exit(0); }
 if (g === 'agent' && c === 'prompt' && process.env.FAKE_PROMPT_BLOCKED) return fail('agent_blocked', 'agent ' + a[2] + ' is blocked and requires interactive input');
-if (g === 'agent' && c === 'prompt') { const ag = h.agents.find((x) => x.name === a[2]); if (!ag) return fail('not_found', 'no agent'); ag.agent_status = process.env.FAKE_AFTER_PROMPT || 'done'; ag.last_prompt = a[3]; return ok({ submitted: true }); }
+if (g === 'agent' && c === 'prompt') { const ag = h.agents.find((x) => x.name === a[2]); if (!ag) return fail('not_found', 'no agent'); if (ag.agent_status === 'blocked') return fail('agent_blocked', 'agent ' + a[2] + ' is blocked and requires interactive input'); ag.agent_status = process.env.FAKE_AFTER_PROMPT || 'done'; ag.last_prompt = a[3]; return ok({ submitted: true }); }
+// The three folder-trust dialogs, as captured from the real CLIs (path wrapped at 40 columns).
+const DIALOGS = {
+  claude: { head: ['Accessing workspace:'], q: ' Quick safety check: Is this a project you created or one you trust? (Like your own code)', mark: '❯', options: ['No, exit', 'Yes, I trust this folder'], trust: 1 },
+  codex: { head: ['  Folder access'], q: '  Trust this folder? Codex can read, edit, and run files here.', mark: '›', options: ['1. Trust and continue', '2. Back to Agent Command Center'], trust: 0 },
+  agy: { head: ['Accessing workspace:'], q: 'Do you trust the contents of this project?', mark: '>', options: ['Yes, I trust this folder', 'No, exit'], trust: 0 },
+};
+const screenOf = (ag) => {
+  const d = DIALOGS[ag.agent]; const p = ag.dialog.path;
+  return [...d.head, ...p.match(/.{1,40}/g), d.q, ...d.options.map((o, i) => (i === ag.dialog.sel ? ' ' + d.mark + ' ' : '   ') + o), 'enter Confirm'].join(String.fromCharCode(10));
+};
+if (g === 'agent' && c === 'read' && a.includes('visible') && h.agents.find((x) => x.name === a[2])?.dialog) {
+  save(); console.log(screenOf(h.agents.find((x) => x.name === a[2]))); process.exit(0);
+}
+if (g === 'agent' && c === 'send-keys') {
+  const ag = h.agents.find((x) => x.name === a[2]); if (!ag) return fail('not_found', 'no agent');
+  h.keys = [...(h.keys ?? []), ...a.slice(3)];
+  for (const k of a.slice(3)) {
+    if (!ag.dialog) continue;
+    const d = DIALOGS[ag.agent];
+    if (k === 'down') ag.dialog.sel = Math.min(ag.dialog.sel + 1, d.options.length - 1);
+    if (k === 'enter') {
+      if (ag.dialog.sel === d.trust) { ag.dialog = null; ag.agent_status = 'idle'; h.trusted = [...(h.trusted ?? []), ag.name]; }
+      else { h.agents = h.agents.filter((x) => x !== ag); h.exited = [...(h.exited ?? []), ag.name]; }
+    }
+  }
+  return ok({ type: 'ok' });
+}
+if (g === 'agent' && c === 'get') { const ag = h.agents.find((x) => x.name === a[2] || x.pane_id === a[2]); if (!ag) return fail('agent_not_found', 'gone'); return ok({ agent: { name: ag.name, agent_status: ag.agent_status } }); }
+if (g === 'agent' && c === 'wait') { const ag = h.agents.find((x) => x.name === a[2]); if (!ag) return fail('agent_not_running', 'gone'); return ok({ agent: { name: ag.name, agent_status: ag.agent_status } }); }
 if (g === 'agent' && c === 'read' && process.env.FAKE_READ_NOT_IDLE && a.includes('recent-unwrapped')) return fail('agent_not_idle', 'agent ' + a[2] + ' is working');
 if (g === 'agent' && c === 'read') { save(); console.log('output of ' + a[2] + ' (' + a[a.indexOf('--source') + 1] + ')'); process.exit(0); }
 fail('unknown', 'fake herdr: ' + a.join(' '));
@@ -105,7 +151,7 @@ export function sandbox({ codexbar = CODEXBAR_FIXTURE, bins = ['herdr', 'hc', 'c
   const bin = join(root, 'bin');
   const project = join(root, 'project');
   for (const d of [home, bin, project]) mkdirSync(d, { recursive: true });
-  const files = { herdr: FAKE_HERDR, hc: FAKE_HC, codexbar: fakeCodexbar(codexbar), claude: VERSION('claude'), codex: VERSION('codex-cli'), kimi: VERSION('kimi') };
+  const files = { herdr: FAKE_HERDR, hc: FAKE_HC, codexbar: fakeCodexbar(codexbar), claude: VERSION('claude'), codex: VERSION('codex-cli'), kimi: VERSION('kimi'), agy: VERSION('agy') };
   for (const name of bins) {
     const p = join(bin, name);
     writeFileSync(p, files[name]);
