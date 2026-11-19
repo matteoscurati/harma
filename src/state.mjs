@@ -13,6 +13,7 @@ export const DEFAULT_CONFIG = {
   orchestrator: null, // {harness, model, effort}
   backend: 'auto', // auto | herdr | hc
   dispatch_policy: 'confirm', // confirm | auto-within-budget
+  trust_project: false, // true: harma answers the folder-trust dialog of its agents (user's choice)
   budgets: {}, // provider -> {limit, currency, period}
   thresholds: {
     low_remaining_pct: 20, // under this, delegate less to the provider
@@ -78,7 +79,7 @@ export function agentsFromEvents(events) {
       case 'started':
         Object.assign(cur, {
           harness: e.harness, model: e.model, effort: e.effort, task_type: e.task_type,
-          backend: e.backend, target: e.target, cwd: e.cwd, started_at: e.at,
+          backend: e.backend, target: e.target, cwd: e.cwd, worktree: e.worktree ?? null, started_at: e.at,
           session_id: e.session_id ?? cur.session_id ?? null, closed_at: null, state: 'open',
         });
         break;

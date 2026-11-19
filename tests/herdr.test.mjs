@@ -1,0 +1,210 @@
+// herdr placement (layout, worktree) and the folder-trust policy.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { sandbox } from './helpers.mjs';
+import { main } from '../src/cli.mjs';
+import { readEvents, agentsFromEvents, loadConfig } from '../src/state.mjs';
+import { readTrustDialog, trustableFolder } from '../src/trust.mjs';
+
+const run = (sb, args, extra) => main(args, sb.opts(extra));
+const events = (sb) => readEvents(sb.project);
+const agents = (sb) => agentsFromEvents(events(sb));
+const calls = (sb, g, c) => sb.state().herdr.calls.filter((x) => x[0] === g && x[1] === c);
+// What herdr injects into every pane it manages.
+const INSIDE = { HERDR_ENV: '1', HERDR_WORKSPACE_ID: 'w9', HERDR_TAB_ID: 'w9:t1', HERDR_PANE_ID: 'w9:p1' };
+
+async function project({ inside = false, trust = false } = {}) {
+  const sb = sandbox();
+  if (inside) Object.assign(sb.env, INSIDE);
+  await run(sb, ['init', '--orchestrator', 'claude:claude-opus-5-5', '--effort', 'high', '--backend', 'herdr', ...(trust ? ['--trust-project'] : [])]);
+  sb.clear();
+  return sb;
+}
+const dispatch = (sb, name, model, extra = [], env = {}) =>
+  run(sb, ['dispatch', '--name', name, '--model', model, '--prompt', 'go', '--yes', ...extra], { env: { ...sb.env, ...env } });
+
+// ── layout ────────────────────────────────────────────────────────────────
+test('inside herdr, agents open as tabs in the orchestrator\'s workspace, not a new workspace', async () => {
+  const sb = await project({ inside: true });
+  assert.equal(await dispatch(sb, 'builder', 'codex:gpt-6.2-sol'), 0);
+  assert.equal(calls(sb, 'workspace', 'create').length, 0);
+  const [create] = calls(sb, 'tab', 'create');
+  assert.equal(create[create.indexOf('--workspace') + 1], 'w9');
+  assert.ok(create.includes('--no-focus'));
+  assert.equal(agents(sb)[0].target.layout, 'tab');
+  assert.equal(loadConfig(sb.project).herdr?.workspace_id, undefined);
+  assert.match(sb.output(), /nel workspace dell'orchestratore/);
+});
+
+test('outside herdr, auto keeps the per-project workspace; tab and split need herdr', async () => {
+  const sb = await project();
+  assert.equal(await dispatch(sb, 'builder', 'codex:gpt-6.2-sol'), 0);
+  assert.equal(calls(sb, 'workspace', 'create').length, 1);
+  assert.equal(agents(sb)[0].target.layout, 'workspace');
+  sb.clear();
+  assert.equal(await dispatch(sb, 'other', 'codex:gpt-6.2-sol', ['--layout', 'split']), 1);
+  assert.equal(sb.state().herdr.splits, undefined);
+  assert.equal(agents(sb).length, 1); // nothing recorded for the refused one
+});
+
+test('--layout split opens a pane beside the orchestrator, and cleanup closes that pane', async () => {
+  const sb = await project({ inside: true });
+  assert.equal(await dispatch(sb, 'reviewer', 'claude:claude-sonnet-5-5', ['--layout', 'split:down']), 0);
+  const [split] = sb.state().herdr.splits;
+  assert.deepEqual([split.from, split.direction], ['w9:p1', 'down']);
+  assert.equal(sb.state().herdr.labels[split.id], 'reviewer');
+  assert.equal(await run(sb, ['cleanup']), 0);
+  assert.deepEqual(sb.state().herdr.closedPanes, [split.id]);
+  assert.equal(calls(sb, 'tab', 'close').length, 0); // never the orchestrator's tab
+});
+
+test('init --layout sets the project default; select --open uses it', async () => {
+  const sb = sandbox();
+  Object.assign(sb.env, INSIDE);
+  await run(sb, ['init', '--orchestrator', 'claude:claude-opus-5-5', '--effort', 'high', '--backend', 'herdr', '--layout', 'split']);
+  assert.equal(loadConfig(sb.project).herdr.layout, 'split');
+  assert.equal(await dispatch(sb, 'builder', 'codex:gpt-6.2-sol'), 0);
+  assert.equal(sb.state().herdr.splits.length, 1);
+  assert.equal(await run(sb, ['init', '--orchestrator', 'claude:claude-opus-5-5', '--layout', 'grid']), 1);
+});
+
+// ── worktree ──────────────────────────────────────────────────────────────
+test('--worktree gives the agent its own checkout in a grouped herdr workspace', async () => {
+  const sb = await project({ inside: true });
+  assert.equal(await dispatch(sb, 'builder', 'codex:gpt-6.2-sol', ['--worktree']), 0);
+  const [wt] = sb.state().herdr.worktrees;
+  assert.equal(wt.branch, 'harma/builder');
+  const a = agents(sb)[0];
+  assert.equal(a.cwd, wt.path);
+  assert.deepEqual(a.worktree, { path: wt.path, branch: 'harma/builder' });
+  assert.equal(a.target.layout, 'worktree');
+  assert.equal(sb.state().herdr.labels['w1:t0'], 'builder'); // the worktree's root tab hosts the agent
+  assert.match(sb.output(), /Worktree: .*harma\/builder/);
+  sb.clear();
+  assert.equal(await dispatch(sb, 'fix', 'codex:gpt-6.2-sol', ['--worktree', '--branch', 'fix/login']), 0);
+  assert.equal(sb.state().herdr.worktrees[1].branch, 'fix/login');
+  sb.clear();
+  await run(sb, ['cleanup', '--agent', 'builder', '--json']);
+  assert.match(JSON.parse(sb.output()).report[0].motivo, /worktree lasciato in .*harma-builder.*git worktree remove/);
+});
+
+// ── trust ─────────────────────────────────────────────────────────────────
+test('trust policy off: a trust dialog is left to the user, no key is sent', async () => {
+  const sb = await project();
+  assert.equal(await dispatch(sb, 'planner', 'claude:claude-opus-5-5', [], { FAKE_START_BLOCKED: 'claude' }), 4);
+  assert.equal(sb.state().herdr.keys, undefined);
+  assert.match(sb.output(), /BLOCCATO/);
+});
+
+for (const [harness, model, keys] of [
+  ['claude', 'claude:claude-opus-5-5', ['down', 'enter']], // Claude's cursor starts on "No, exit"
+  ['codex', 'codex:gpt-6.2-sol', ['enter']],
+  ['agy', 'agy:gemini-4-argon', ['enter']],
+]) {
+  test(`trust policy on: harma answers ${harness}'s trust dialog and delivers the task`, async () => {
+    const sb = sandbox({ bins: ['herdr', 'codexbar', 'claude', 'codex', 'agy'] });
+    await run(sb, ['init', '--orchestrator', 'claude:claude-opus-5-5', '--effort', 'high', '--backend', 'herdr']);
+    assert.equal(await run(sb, ['trust', 'on']), 0);
+    sb.clear();
+    assert.equal(await dispatch(sb, 'agent1', model, [], { FAKE_START_BLOCKED: harness }), 0);
+    const h = sb.state().herdr;
+    assert.deepEqual(h.keys, keys);
+    assert.deepEqual(h.trusted, ['agent1']);
+    assert.equal(h.agents[0].last_prompt, 'go');
+    const types = events(sb).map((e) => e.type);
+    assert.ok(types.includes('trust_policy') && types.includes('trusted'));
+  });
+}
+
+test('trust policy on, but the dialog names another folder: harma does not answer', async () => {
+  const sb = await project({ trust: true });
+  assert.equal(await dispatch(sb, 'planner', 'claude:claude-opus-5-5', [], { FAKE_START_BLOCKED: 'claude', FAKE_DIALOG_PATH: '/somewhere/else' }), 4);
+  assert.equal(sb.state().herdr.keys, undefined);
+  assert.match(sb.output(), /non data — il dialogo non mostra la cartella/);
+  assert.equal(events(sb).find((e) => e.type === 'trust_skipped').agent, 'planner');
+});
+
+test('trust policy on, folder outside the project: not answered', async () => {
+  const sb = await project({ trust: true });
+  assert.equal(await dispatch(sb, 'planner', 'claude:claude-opus-5-5', ['--cwd', sb.home], { FAKE_START_BLOCKED: 'claude' }), 4);
+  assert.equal(sb.state().herdr.keys, undefined);
+  assert.match(sb.output(), /fuori dal progetto/);
+  assert.match(events(sb).find((e) => e.type === 'trust_skipped').detail, /fuori dal progetto/);
+});
+
+test('trust policy on: an agent in its own worktree is trusted for that worktree', async () => {
+  const sb = await project({ trust: true });
+  assert.equal(await dispatch(sb, 'builder', 'codex:gpt-6.2-sol', ['--worktree'], { FAKE_START_BLOCKED: 'codex' }), 0);
+  assert.deepEqual(sb.state().herdr.trusted, ['builder']);
+  assert.equal(events(sb).find((e) => e.type === 'trusted').cwd, sb.state().herdr.worktrees[0].path);
+});
+
+test('harma trust shows and changes the policy, and records who changed it', async () => {
+  const sb = await project();
+  await run(sb, ['trust', '--json']);
+  assert.equal(JSON.parse(sb.output()).trust_project, false);
+  assert.equal(await run(sb, ['trust', 'on']), 0);
+  assert.equal(loadConfig(sb.project).trust_project, true);
+  assert.equal(await run(sb, ['trust', 'off']), 0);
+  assert.equal(loadConfig(sb.project).trust_project, false);
+  assert.deepEqual(events(sb).filter((e) => e.type === 'trust_policy').map((e) => [e.value, e.by]),
+    [[true, 'utente (harma trust on)'], [false, 'utente (harma trust off)']]);
+  assert.equal(await run(sb, ['trust', 'maybe']), 1);
+});
+
+// ── the real dialogs, as captured under herdr 0.9.5 ────────────────────────
+const P = '/private/tmp/claude-501/scratchpad/trustprobe/repo';
+const REAL = {
+  claude: [
+    '───────────────────────────────────────────────',
+    ' Accessing workspace:',
+    ` ${P.slice(0, 30)}`, ` ${P.slice(30)}`,
+    ' Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source',
+    ' project, or work from your team). If not, take a moment to review what\'s in this folder first.',
+    ' Claude Code\'ll be able to read, edit, and execute files here.',
+    ' Security guide',
+    ' ❯ No, exit',
+    '   Yes, I trust this folder',
+    ' Enter to confirm · Esc to cancel',
+  ].join('\n'),
+  codex: [
+    '  Folder access',
+    `  ${P.slice(0, 25)}`, `  ${P.slice(25)}`,
+    '  Trust this folder? Codex can read, edit, and run files here, subject to your permission settings. Folder settings',
+    '  can run code automatically, even without a model request. Continue only if you trust these files. Your trust',
+    '  decision will be saved.',
+    '› 1. Trust and continue',
+    '  2. Back to Agent Command Center',
+    '  enter continue · esc back',
+  ].join('\n'),
+  agy: [
+    'Accessing workspace:',
+    `${P.slice(0, 20)}`, `${P.slice(20)}`,
+    'Do you trust the contents of this project?',
+    'Antigravity CLI requires permission to read, edit, and execute files here.',
+    '> Yes, I trust this folder',
+    '  No, exit',
+    '  ↑/↓ Navigate · enter Confirm',
+    '                                                   auto · Gemini 4 Argon · high',
+  ].join('\n'),
+};
+
+test('readTrustDialog recognizes the real dialogs, the wrapped path and the selected option', () => {
+  assert.deepEqual(readTrustDialog('claude', REAL.claude, P), { dialog: true, path: true, selected: false, line: 'No, exit' });
+  assert.deepEqual(readTrustDialog('codex', REAL.codex, P), { dialog: true, path: true, selected: true, line: '1. Trust and continue' });
+  assert.deepEqual(readTrustDialog('agy', REAL.agy, P), { dialog: true, path: true, selected: true, line: 'Yes, I trust this folder' });
+  const moved = REAL.claude.replace(' ❯ No, exit', '   No, exit').replace('   Yes, I trust', ' ❯ Yes, I trust');
+  assert.equal(readTrustDialog('claude', moved, P).selected, true);
+  assert.equal(readTrustDialog('claude', REAL.claude, '/other/repo').path, false);
+  assert.equal(readTrustDialog('codex', REAL.claude, P).dialog, false); // another CLI's dialog
+  assert.equal(readTrustDialog('kimi', REAL.claude, P).dialog, false); // no known dialog
+  assert.equal(readTrustDialog('codex', '› Ask Codex to do anything', P).dialog, false); // the normal prompt
+});
+
+test('trustableFolder: the project, folders under it, or the agent\'s worktree only', () => {
+  assert.ok(trustableFolder('/p/app', '/p/app'));
+  assert.ok(trustableFolder('/p/app/web', '/p/app'));
+  assert.ok(!trustableFolder('/p/application', '/p/app'));
+  assert.ok(!trustableFolder('/p', '/p/app'));
+  assert.ok(trustableFolder('/wt/app/builder', '/p/app', '/wt/app/builder'));
+});

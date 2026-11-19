@@ -14,7 +14,8 @@ Every command takes `--json`. Targets are `harness:model` (for example `claude:c
 | `select --open [--wait] [--timeout s]` | Selection screen in a focused herdr tab (or `hc` terminal); `--wait` returns the saved choices (default 900 s) |
 | `select --set "job=h:m@e\|h:m@e,job=none"` | Record the user's choices; `\|` separates models in order of preference; the orchestrator takes one model; at most 5 per job |
 | `select --accept` / `select --show` | Accept all proposals (only if the user said so) / print choices |
-| `dispatch --name n (--model h:m [--effort e] \| --task-type job) [--prompt "…" \| --prompt-file f] [--cwd dir] [--wait] [--timeout s] [--yes]` | Start an agent and send the task |
+| `dispatch --name n (--model h:m [--effort e] \| --task-type job) [--prompt "…" \| --prompt-file f] [--cwd dir] [--layout auto\|workspace\|tab\|split[:down]] [--worktree [--branch b]] [--wait] [--timeout s] [--yes]` | Start an agent and send the task |
+| `trust [on\|off]` | Show or set the project's trust policy; only on the user's request |
 | `send n "text" [--wait] [--timeout s] [--yes]` | More work for an open agent |
 | `read n [--lines N]` | Recent screen output of an agent |
 | `status [--all]` | Open agents (all with `--all`): model, effort, live state, age, session id |
