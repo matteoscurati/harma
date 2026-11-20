@@ -18,6 +18,9 @@ import { run, which, parseJson, HarmaError, shq } from './util.mjs';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 import { herdrKind } from './harness.mjs';
 import { readTrustDialog } from './trust.mjs';
+import { selectedOption, pickOption } from './answers.mjs';
+
+const MAX_OPTIONS = 15; // a choice list longer than this is not a dialog harma walks
 
 export function projectId(root) {
   return `${basename(root).toLowerCase().replace(/[^a-z0-9_-]/g, '-').slice(0, 20)}-${createHash('sha1').update(root).digest('hex').slice(0, 6)}`;
@@ -342,6 +345,119 @@ export class HerdrBackend {
     }
     if (!last || last === 'blocked') return { ok: false, detail: `dopo la fiducia l'agente è ${last ?? 'in stato sconosciuto'}` };
     return { ok: true, detail: `fiducia data a ${cwd}` };
+  }
+
+  /** What the agent's terminal shows now. */
+  async screen(target) {
+    const res = await this.exec(['agent', 'read', target, '--source', 'visible']);
+    return res.ok ? (parseJson(res.stdout)?.result?.read?.text ?? res.stdout) : '';
+  }
+
+  async agentInfo(target) {
+    const res = await this.exec(['agent', 'get', target]);
+    return res.ok ? (parseJson(res.stdout)?.result?.agent ?? null) : null;
+  }
+
+  /**
+   * Answer an agent that waits on a dialog (herdr state blocked). With
+   * `option`, walk the choice list, reading the selection after each key,
+   * and stop on the option named; `allow(optionText)` is asked before Enter.
+   * With `text`, type it (after the option, if any). `keys` are sent as
+   * given, with no check. Then wait until the agent leaves blocked or shows
+   * another dialog. Returns {ok, code?, detail?, chosen, options, state, screen}.
+   */
+  async answer({ target, option = null, text = null, keys = null, allow = () => ({ allowed: true }) }) {
+    const info = await this.agentInfo(target);
+    if (!info) return { ok: false, code: 'not_found', detail: `herdr non trova l'agente ${target}` };
+    if (info.agent_status !== 'blocked') {
+      return { ok: false, code: 'not_blocked', state: info.agent_status ?? null, detail: `${target} non aspetta una risposta (stato ${info.agent_status ?? 'sconosciuto'})` };
+    }
+    const before = await this.screen(target);
+    let chosen = null;
+    let options = [];
+    if (keys) {
+      await this.exec(['agent', 'send-keys', target, ...keys]);
+    } else {
+      if (option != null) {
+        const nav = await this.selectOption(target, option, before);
+        options = nav.options;
+        if (!nav.ok) return { ok: false, code: 'option', detail: nav.detail, options };
+        chosen = nav.chosen;
+      }
+      const gate = allow(chosen);
+      if (!gate.allowed) return { ok: false, code: 'needs_confirmation', detail: gate.reason, chosen, options };
+      if (text != null) {
+        const typed = await this.exec(['pane', 'send-text', info.pane_id ?? target, text]);
+        if (!typed.ok) return { ok: false, code: 'send', detail: typed.stderr.trim() || 'herdr pane send-text fallito', chosen, options };
+      }
+      await this.exec(['agent', 'send-keys', target, 'enter']);
+    }
+    // herdr may report blocked for a moment after the answer. Stop when the
+    // state changes, or when the screen has shown another dialog for a while.
+    let state = 'blocked';
+    let screen = before;
+    let changed = 0;
+    for (let i = 0; i < this.trustPolls; i++) {
+      if (i) await sleep(this.trustPollMs);
+      const now = await this.agentInfo(target);
+      state = now ? now.agent_status ?? null : 'chiuso';
+      if (state !== 'blocked') break;
+      screen = await this.screen(target);
+      if (screen !== before && ++changed >= 3) break;
+    }
+    if (state !== 'blocked' && state !== 'chiuso') screen = await this.screen(target);
+    return { ok: true, chosen, options, state, screen };
+  }
+
+  /**
+   * Walk the choice list on screen and leave the selection on `want`: read
+   * every option first (down to the end, then up to the top; a list that
+   * wraps is read in one pass), pick the one meant, move to it and check it.
+   */
+  async selectOption(target, want, screen) {
+    const read = async () => selectedOption(await this.screen(target));
+    const key = (k) => this.exec(['agent', 'send-keys', target, k]);
+    const first = selectedOption(screen);
+    if (!first) return { ok: false, detail: 'sullo schermo non c\'è un elenco di opzioni con una selezione', options: [] };
+    const list = [first];
+    let pos = 0;
+    let wrapped = false;
+    // A key that takes the focus off the list (to a text field, say) is undone.
+    const back = async (k) => {
+      await key(k);
+      return (await read()) === list[pos];
+    };
+    const lost = { ok: false, detail: 'la selezione è uscita dall\'elenco e non è tornata', options: list };
+    for (let i = 0; i < MAX_OPTIONS; i++) {
+      await key('down');
+      const next = await read();
+      if (!next) { if (!(await back('up'))) return lost; break; }
+      if (next === list[pos]) break;
+      if (next === list[0]) { wrapped = true; pos = 0; break; }
+      list.push(next);
+      pos = list.length - 1;
+    }
+    if (!wrapped) {
+      for (let i = 0; i < MAX_OPTIONS + list.length; i++) {
+        await key('up');
+        const prev = await read();
+        if (!prev) { if (!(await back('down'))) return lost; break; }
+        if (prev === list[pos]) break;
+        if (pos > 0) {
+          pos--;
+          if (prev !== list[pos]) return { ok: false, detail: 'la selezione si è mossa in modo inatteso', options: list };
+          continue;
+        }
+        list.unshift(prev);
+      }
+    }
+    const pick = pickOption(list, want);
+    if (pick.error) return { ok: false, detail: pick.error, options: list };
+    const moves = pick.index - pos;
+    for (let i = 0; i < Math.abs(moves); i++) await key(moves > 0 ? 'down' : 'up');
+    const at = await read();
+    if (at !== list[pick.index]) return { ok: false, detail: `dopo lo spostamento è selezionata «${at ?? 'nessuna opzione'}», non «${list[pick.index]}»`, options: list };
+    return { ok: true, chosen: at, options: list };
   }
 
   async list() {

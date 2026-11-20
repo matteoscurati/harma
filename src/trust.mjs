@@ -2,8 +2,9 @@
 // and how harma recognizes it. harma answers it only as the project's trust
 // policy allows (harma trust off | worktrees | on), only for a worktree harma
 // created or, with "on", the project folder, and only when the screen matches
-// the dialog exactly. Tool permissions (commands, file edits) are never
-// answered by harma.
+// the dialog exactly. harma itself never answers tool permissions (commands,
+// file edits): the orchestrator may, through harma answer, as the project's
+// answer policy allows (see answers.mjs).
 import { realpathSync } from 'node:fs';
 
 // Texts captured from claude 2.1.327, codex-cli 0.170.0 and agy 1.5.12 under herdr 0.9.5.

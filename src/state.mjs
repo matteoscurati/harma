@@ -14,6 +14,7 @@ export const DEFAULT_CONFIG = {
   backend: 'auto', // auto | herdr | hc
   dispatch_policy: 'confirm', // confirm | auto-within-budget
   trust: null, // off | worktrees | on: whose folder-trust dialog harma answers; null = worktrees (see trustPolicy)
+  answers: null, // off | questions | permissions | all: how far the orchestrator answers blocked agents; null = permissions
   worktree_copy: [], // untracked files or folders (e.g. .env) copied into each worktree harma creates
   budgets: {}, // provider -> {limit, currency, period}
   thresholds: {

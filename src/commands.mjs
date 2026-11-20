@@ -11,7 +11,8 @@ import { collectCredits } from './credits.mjs';
 import { rankRows, refreshFromAA } from './rank.mjs';
 import { route, taskProfile, TASK_PROFILES } from './route.mjs';
 import { selectBackend, HerdrBackend, HcBackend, projectId, checkAgentName, LAYOUTS } from './backends.mjs';
-import { trustableFolder, trustPolicy, TRUST_LEVELS } from './trust.mjs';
+import { trustableFolder, trustPolicy, TRUST_LEVELS, readTrustDialog } from './trust.mjs';
+import { answerPolicy, answerGate, ANSWER_LEVELS, ANSWER_KINDS } from './answers.mjs';
 import { usageFor, estimateCost, findCodexSession } from './usage.mjs';
 import { table, HarmaError, now, which, readJson, run, shq } from './util.mjs';
 import { modelOptions, selectionRows, applySelection, parseSetSpec, describe, describePick, ORCHESTRATOR, rosterPicks, choosePick } from './roster.mjs';
@@ -72,6 +73,7 @@ export async function cmdInit(flags, opts = {}) {
     `Orchestratore: ${t.harness}:${t.model} @ ${effort ?? 'default'}`,
     `Backend: ${cfg.backend} · Layout herdr: ${cfg.herdr?.layout ?? 'auto'} · Policy di delega: ${cfg.dispatch_policy}`,
     `Fiducia nella cartella: ${TRUST_TEXT[trustPolicy(cfg, readEvents(root))]}`,
+    `Risposte agli agenti bloccati: ${ANSWER_TEXT[answerPolicy(cfg)]}`,
     ...(cfg.worktree_copy?.length ? [`Copiati in ogni worktree: ${cfg.worktree_copy.join(', ')}`] : []),
     'Prossimi passi: harma models · harma credits · harma rank',
   ].join('\n'));
@@ -83,6 +85,106 @@ const TRUST_TEXT = {
   worktrees: 'harma risponde per i worktree che crea, l\'utente per il resto (harma trust off per disattivare, on per includere il progetto)',
   on: 'harma risponde per il progetto e i worktree che crea (harma trust worktrees o off per restringere)',
 };
+
+const ANSWER_TEXT = {
+  off: 'l\'orchestratore non risponde: domande e permessi restano all\'utente',
+  questions: 'l\'orchestratore risponde alle domande sul lavoro; i permessi restano all\'utente',
+  permissions: 'l\'orchestratore risponde alle domande e approva i permessi una volta, a giudizio; un permesso che resta (es. «non chiedere più») lo dà l\'utente',
+  all: 'l\'orchestratore risponde a tutto, anche ai permessi che restano',
+};
+
+/**
+ * The project's answer policy: how far the orchestrator may answer agents
+ * that wait on a question or a permission. The user's decision.
+ */
+export async function cmdAnswers(flags, opts = {}) {
+  const c = ctx(opts);
+  const cfg = loadConfig(c.root, { required: true });
+  const want = flags._[0];
+  if (want && !ANSWER_LEVELS.includes(want)) throw new HarmaError(`Uso: harma answers [${ANSWER_LEVELS.join('|')}]`);
+  if (want) {
+    cfg.answers = want;
+    saveConfig(c.root, cfg);
+    appendEvent(c.root, { type: 'answer_policy', value: want, by: `utente (harma answers ${want})` });
+  }
+  const level = answerPolicy(cfg);
+  emit(c, flags, { answers: level, root: c.root }, () => `Risposte agli agenti bloccati per ${c.root}: ${ANSWER_TEXT[level]}.\nIl dialogo di fiducia nella cartella segue harma trust.`);
+  return { answers: level };
+}
+
+/**
+ * Answer an agent that waits on a question or a permission request: pick the
+ * option named (checked on screen before Enter), type a free answer, or send
+ * keys. Recorded in the event log with the reason.
+ */
+export async function cmdAnswer(flags, opts = {}) {
+  const c = ctx(opts);
+  const cfg = loadConfig(c.root, { required: true });
+  const name = flags._[0];
+  const usage = 'Uso: harma answer <nome> --kind question|permission (--option "<testo o numero>" [--text "…"] | --text "…" | --keys "down,enter") [--reason "…"]';
+  const agent = openAgent(c, name);
+  if (agent.mode === 'headless') throw new HarmaError(`${name} è un lavoro non interattivo: non aspetta risposte`);
+  const kind = flags.kind;
+  if (!ANSWER_KINDS.includes(kind)) {
+    throw new HarmaError(usage, { hint: 'question: una domanda sul lavoro; permission: una richiesta di permesso (eseguire un comando, scrivere un file, usare la rete)' });
+  }
+  const option = flags.option != null && flags.option !== true ? String(flags.option) : null;
+  const text = flags.text != null && flags.text !== true ? String(flags.text) : null;
+  const keys = flags.keys ? String(flags.keys).split(/[\s,]+/).filter(Boolean) : null;
+  if (!option && text == null && !keys) throw new HarmaError(usage);
+  if (keys && (option || text != null)) throw new HarmaError('--keys va usato da solo', { hint: usage });
+
+  const level = answerPolicy(cfg);
+  const confirmed = Boolean(flags.yes);
+  const refuse = (reason, extra = {}) => {
+    const data = { needs_confirmation: true, reason, agent: name, kind, option: extra.chosen ?? option, policy: level };
+    emit(c, flags, data, () => `CONFERMA RICHIESTA — nessuna risposta data a ${name}.\nMotivo: ${reason}\nChiedi all'utente: se approva questa risposta, ripeti con --yes; altrimenti risponde lui nel terminale dell'agente.`);
+    return { needsConfirmation: true, exitCode: EXIT_NEEDS_CONFIRM };
+  };
+  const pre = answerGate(level, { kind, keys: Boolean(keys), confirmed });
+  if (!pre.allowed) return refuse(pre.reason);
+
+  const backend = opts.backend ?? backendFor(agent, cfg, c.env);
+  if (typeof backend.answer !== 'function') {
+    throw new HarmaError(`harma answer funziona con herdr; ${name} gira su ${backend.name}`, { hint: 'Chiedi all\'utente di rispondere nel terminale dell\'agente' });
+  }
+  const target = agent.target?.name ?? name;
+  const kindOf = herdrKind(agent.harness);
+  if (kindOf && !confirmed && readTrustDialog(kindOf, await backend.screen(target), agent.target?.cwd ?? c.root).dialog) {
+    return refuse(`è il dialogo di fiducia nella cartella: lo regola harma trust (policy ${trustPolicy(cfg, readEvents(c.root))})`);
+  }
+  let by = pre.by;
+  const res = await backend.answer({
+    target, option, text, keys,
+    allow: (chosen) => {
+      const g = answerGate(level, { kind, option: chosen, confirmed });
+      if (g.allowed) by = g.by;
+      return g;
+    },
+  });
+  if (res.code === 'needs_confirmation') return refuse(res.detail, res);
+  if (!res.ok) {
+    throw new HarmaError(`Nessuna risposta data a ${name}: ${res.detail}`, {
+      exitCode: res.code === 'not_blocked' ? 1 : EXIT_BLOCKED,
+      hint: res.options?.length ? `Opzioni sullo schermo: ${res.options.join(' | ')}` : `Leggi lo schermo: harma read ${name} --lines 40`,
+    });
+  }
+  const answer = [res.chosen && `«${res.chosen}»`, text != null && `testo (${text.length} caratteri)`, keys && `tasti ${keys.join(' ')}`].filter(Boolean).join(' + ');
+  appendEvent(c.root, {
+    type: 'answered', agent: name, kind, option: res.chosen ?? null, text: text != null ? text.slice(0, 500) : null, keys,
+    reason: flags.reason && flags.reason !== true ? String(flags.reason) : null, by, state_after: res.state,
+  });
+  const tail = (res.screen ?? '').split('\n').filter((l) => l.trim()).slice(-15).join('\n');
+  const data = { answered: true, agent: name, kind, option: res.chosen ?? null, options: res.options, state: res.state, still_blocked: res.state === 'blocked', by, screen: res.state === 'blocked' ? tail : null };
+  emit(c, flags, data, () => [
+    `Risposto a ${name} (${kind === 'question' ? 'domanda' : 'permesso'}, ${by}): ${answer}.`,
+    res.state === 'blocked' ? `${name} aspetta ancora una risposta. Ultime righe:\n${tail}`
+      : res.state === 'chiuso' ? `${name} non è più in herdr: il suo processo è terminato.`
+        : `Ora ${name} è ${res.state ?? 'in stato sconosciuto'}.`,
+    'Di\' all\'utente che cosa hai risposto e perché.',
+  ].join('\n'));
+  return data;
+}
 
 /**
  * The project's trust policy: whose folder-trust dialog harma answers.
@@ -395,7 +497,7 @@ export async function cmdDispatch(flags, opts = {}) {
     ...(trusted ? [`Fiducia nella cartella: ${trusted.ok ? `data da harma (policy trust ${trustPolicy(cfg, readEvents(c.root))})` : `non data — ${trusted.detail}`}`] : []),
     `Sessione: ${sid ?? 'non ancora nota (verrà letta alla chiusura)'}`,
     promptState === 'sent' ? `Compito inviato (${prompt.length} caratteri)${flags.wait ? '; atteso fino a stato stabile' : ''}.`
-      : promptState === 'blocked' ? `BLOCCATO: ${flags.name} aspetta una risposta (es. fiducia nella cartella) e il compito NON è stato inviato.\nLeggi con: harma read ${flags.name} — chiedi all'utente di rispondere nel suo terminale, poi: harma send ${flags.name} "<compito>" --yes`
+      : promptState === 'blocked' ? `BLOCCATO: ${flags.name} aspetta una risposta (es. fiducia nella cartella) e il compito NON è stato inviato.\nLeggi con: harma read ${flags.name} --lines 40. Il dialogo di fiducia nella cartella segue harma trust: chiedi all'utente di rispondere nel suo terminale. Un'altra domanda: harma answer ${flags.name} (policy answers ${answerPolicy(cfg)}). Poi: harma send ${flags.name} "<compito>" --yes`
         : 'Nessun compito inviato: usa harma send.',
     ...plan.notes.map((n) => `Nota: ${n}`),
   ].join('\n'));
@@ -594,7 +696,15 @@ export async function cmdSend(flags, opts = {}) {
     return { needsConfirmation: true, exitCode: EXIT_NEEDS_CONFIRM };
   }
   const backend = opts.backend ?? backendFor(agent, cfg, c.env);
-  await backend.prompt(agent.target?.name ?? name, text, { wait: Boolean(flags.wait), timeoutSec: Number(flags.timeout ?? 600) });
+  try {
+    await backend.prompt(agent.target?.name ?? name, text, { wait: Boolean(flags.wait), timeoutSec: Number(flags.timeout ?? 600) });
+  } catch (e) {
+    if (e.code !== 'agent_blocked') throw e;
+    throw new HarmaError(`${name} aspetta una risposta: il messaggio NON è stato inviato`, {
+      exitCode: EXIT_BLOCKED,
+      hint: `Leggi la domanda con harma read ${name} --lines 40 e rispondi con harma answer ${name} --kind question|permission …; poi rimanda il messaggio`,
+    });
+  }
   appendEvent(c.root, { type: 'prompted', agent: name, chars: text.length, confirmed_by: gate.by });
   c.out(flags.json ? JSON.stringify({ sent: true }) : `Inviato a ${name} (${text.length} caratteri).`);
   return { sent: true };

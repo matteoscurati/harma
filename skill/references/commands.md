@@ -17,8 +17,10 @@ Every command takes `--json`. Targets are `harness:model` (for example `claude:c
 | `dispatch --name n (--model h:m [--effort e] \| --task-type job) [--prompt "…" \| --prompt-file f] [--cwd dir] [--layout auto\|workspace\|tab\|split[:right\|:down]] [--worktree [--branch b]] [--headless [--max-time s]] [--machine m --cwd dir] [--wait] [--timeout s] [--yes]` | Start an agent and send the task; `--headless`: one task, one answer; `--machine`: on another machine's herdr |
 | `trust [off\|worktrees\|on]` | Show or set who answers folder-trust dialogs (default `worktrees`); change it only on the user's request |
 | `worktree [--copy ".env,…"]` | Show or set the untracked files copied into each new worktree; set it only on the user's request |
+| `answers [off\|questions\|permissions\|all]` | Show or set how far you may answer waiting agents (default `permissions`); change it only on the user's request |
 | `send n "text" [--wait] [--timeout s] [--yes]` | More work for an open interactive agent (refused for a headless job) |
 | `read n [--lines N]` | Recent screen output of an agent; for a headless job, its answer |
+| `answer n --kind question\|permission (--option "text or number" [--text "…"] \| --text "…" \| --keys "down,enter") [--reason "…"] [--yes]` | Answer an agent that waits on a question or a permission; harma checks the selected option on screen before Enter |
 | `status [--all]` | Open agents (all with `--all`): model, effort, live state, age, session id |
 | `costs` | Estimated cost per agent, credits per provider, `advice` |
 | `cleanup [--dry-run] [--agent n] [--force] [--workspace]` | Save session ids, close finished agents |
@@ -31,8 +33,8 @@ Jobs: `pianificazione` (planning), `sviluppo` (development), `review`, `debuggin
 
 - `0`: done
 - `1`: error; the message has a hint
-- `3`: needs the user's confirmation; nothing started. Show the plan, ask, rerun with `--yes`
-- `4`: `dispatch` started the agent but it waits on a dialog; the task wasn't sent (see troubleshooting.md)
+- `3`: needs the user's confirmation; nothing started or answered. Show the plan or the answer, ask, rerun with `--yes`
+- `4`: the agent waits on a dialog: `dispatch` started it but the task wasn't sent, `send` wasn't delivered, or `answer` found no option to pick (see troubleshooting.md)
 
 ## Credit states
 
@@ -47,5 +49,5 @@ In the user's order: skip a model whose CLI isn't installed or whose credits are
 - **herdr**: inside herdr, a pane beside the orchestrator while there is room, then a tab; outside, one workspace per project (`harma:<project>`); headless jobs show up as agents named after the job
 - **herdr-core (`hc`)**: headless terminals labelled `harma.project` and `harma.agent`; the user opens one with `hc attach <name>`
 - **`.harma/config.json`**: orchestrator, backend, policy, budgets, thresholds, routing overrides, `roster` (the user's models per job)
-- **`.harma/agents.jsonl`**: append-only events (started, session, prompted, blocked, closed, resumed, roster)
+- **`.harma/agents.jsonl`**: append-only events (started, session, prompted, blocked, answered, closed, resumed, roster)
 - **`.harma/cache/`**: last inventory, credits, rank, selection status

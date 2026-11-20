@@ -1,6 +1,6 @@
 import {
   cmdInit, cmdModels, cmdCredits, cmdRank, cmdRoute, cmdDispatch, cmdSend, cmdRead,
-  cmdStatus, cmdCosts, cmdCleanup, cmdResume, cmdSelect, cmdTrust, cmdWorktree,
+  cmdStatus, cmdCosts, cmdCleanup, cmdResume, cmdSelect, cmdTrust, cmdWorktree, cmdAnswer, cmdAnswers,
 } from './commands.mjs';
 import { cmdRun } from './run.mjs';
 import { cmdInstall, cmdUninstall, cmdDoctor } from './install.mjs';
@@ -35,6 +35,8 @@ Progetto
   trust [off|worktrees|on]       chi risponde al dialogo "fidati della cartella" degli agenti: worktrees
                                  (default) harma per i worktree che crea; on anche per il progetto; off mai
   worktree [--copy ".env,…"]     file che git non traccia da copiare in ogni worktree che harma crea
+  answers [off|questions|permissions|all]   fin dove l'orchestratore risponde agli agenti bloccati:
+                                 permissions (default) domande e permessi una volta; «non chiedere più» all'utente
 
 Conoscere le risorse
   models                         CLI di agenti, modelli ed effort su questa macchina
@@ -59,6 +61,9 @@ Delegare (con policy "confirm" serve --yes, dopo il consenso dell'utente)
                                  --machine: l'agente gira sul server herdr di un'altra macchina
   send <nome> "<testo>" [--wait] [--yes]
   read <nome> [--lines N]        schermo dell'agente; per un lavoro non interattivo, la sua risposta
+  answer <nome> --kind question|permission (--option "<testo o n.>" [--text "…"] | --text "…" | --keys "down,enter")
+         [--reason "…"] [--yes]  risponde a un agente bloccato su una domanda o un permesso; harma
+                                 controlla sullo schermo l'opzione selezionata prima di Invio
 
 Sorvegliare
   status [--all]                 stato di ogni agente aperto
@@ -78,7 +83,7 @@ const COMMANDS = {
   init: cmdInit, models: cmdModels, credits: cmdCredits, rank: cmdRank, route: cmdRoute,
   dispatch: cmdDispatch, send: cmdSend, read: cmdRead, status: cmdStatus, costs: cmdCosts,
   cleanup: cmdCleanup, resume: cmdResume, select: cmdSelect, trust: cmdTrust, install: cmdInstall, uninstall: cmdUninstall, doctor: cmdDoctor,
-  worktree: cmdWorktree,
+  worktree: cmdWorktree, answer: cmdAnswer, answers: cmdAnswers,
   _run: cmdRun, // internal: the runner of a headless job, typed by harma into its terminal
 };
 

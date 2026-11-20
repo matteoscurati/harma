@@ -2,11 +2,12 @@
 
 ## Exit code 4: the agent waits on a dialog
 
-The agent started but waits on a question, often "trust this folder?" in a new directory, and the task wasn't delivered.
+The agent waits on a question, and the task or message wasn't delivered. At startup it's often "trust this folder?" in a new directory.
 
-1. `harma read <name>` to see the question
-2. Tell the user what it asks and ask them to answer it in the agent's tab or terminal. Don't answer it yourself, even when the answer looks obvious: trust and approval decisions belong to the user. If it's the folder-trust dialog in the project folder and the user wants harma to handle those, they can run `harma trust on` (or ask you to); harma already answers it in the worktrees it creates, unless the user ran `harma trust off`
-3. After they confirm, `harma send <name> "<task>" --yes` (this needs their yes for the send)
+1. `harma read <name> --lines 40` to see the question
+2. If it's the folder-trust dialog, it follows the trust policy: tell the user what it asks and ask them to answer it in the agent's tab or terminal. If they want harma to handle it in the project folder, they can run `harma trust on` (or ask you to); harma already answers it in the worktrees it creates, unless the user ran `harma trust off`
+3. Any other question or permission request: answer it with `harma answer`, as SKILL.md's "Answer a waiting agent" says. Exit code 3 means it needs the user's yes; exit code 4 means the option you named isn't on screen (the hint lists the options)
+4. Then send the task: `harma send <name> "<task>" --yes` (this needs the user's yes for the send)
 
 ## No usable model for a job
 
