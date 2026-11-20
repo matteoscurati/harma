@@ -2,7 +2,7 @@
 
 All notable changes to harma, newest first. Versions follow [semantic versioning](https://semver.org/).
 
-## Unreleased
+## 0.6.0 (2026-11-20)
 
 The orchestrator answers agents that wait:
 
@@ -10,7 +10,7 @@ The orchestrator answers agents that wait:
 - **`harma answers off|questions|permissions|all`**: how far the orchestrator may go. The default, `permissions`, covers questions about the work and permissions for the one request on screen; an option that keeps a permission ("don't ask again", "allow always") still needs your yes. The skill tells the orchestrator to approve only actions inside the agent's task and folder, to leave a push, a deploy, deletions outside the folder, payments and credentials to you, and to tell you what it answered and why
 - **`harma send` to a waiting agent** exits with code 4 and says to answer first, instead of passing on herdr's error
 
-Until now the skill told the orchestrator never to answer and to send you to the agent's tab, so a question stopped that agent until you got there. The folder-trust dialog still follows `harma trust`.
+Until now the skill told the orchestrator never to answer and to send you to the agent's tab, so a question stopped that agent until you got there. Existing projects get the new default, `permissions`; `harma answers off` brings back the old behavior. The folder-trust dialog still follows `harma trust`.
 
 ## 0.5.0 (2026-11-20)
 
