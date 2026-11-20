@@ -22,6 +22,7 @@ Model targets are written `harness:model`, where the harness is the CLI that run
 |---|---|
 | `trust [off\|worktrees\|on]` | Shows or sets who answers the folder-trust dialog: `worktrees` (default) harma for the worktrees it creates, `on` also the project folder, `off` never; records who changed it |
 | `worktree [--copy ".env,…"]` | Shows or sets the untracked files harma copies into each worktree it creates |
+| `answers [off\|questions\|permissions\|all]` | Shows or sets how far the orchestrator may answer agents that wait on a question or a permission: `permissions` (default) questions and one-time permissions; records who changed it; see [questions and permissions](agents-and-sessions.md#questions-and-permissions) |
 
 ## Know your resources
 
@@ -75,6 +76,7 @@ Agent names are lowercase, start with a letter, use `a-z`, `0-9`, `_` or `-`, ar
 | Command | Description |
 |---|---|
 | `status [--all]` | Each open agent: model, effort, live state, age and session ID; `--all` includes closed agents |
+| `answer agent_name --kind question\|permission (--option "text or number" [--text "…"] \| --text "…" \| --keys "down,enter") [--reason "…"] [--yes]` | Answers an agent that waits on a question or a permission request, within the answer policy; checks the selected option on screen before Enter |
 | `costs` | Estimated cost per agent, credits per provider, and advice on where to delegate more or less |
 
 Live states come from the backend: `working`, `idle`, `done`, `blocked`, `unknown` or `finished`.
@@ -104,8 +106,8 @@ harma doesn't overwrite or remove a skill folder it didn't install unless you pa
 |---|---|
 | 0 | Done |
 | 1 | Error; the message says what failed and how to fix it |
-| 3 | Needs your confirmation; nothing was started (rerun with `--yes` after you agree) |
-| 4 | `dispatch` started the agent, but it waits on a dialog and the task wasn't sent; see [troubleshooting](troubleshooting.md#an-agent-waits-on-a-dialog) |
+| 3 | Needs your confirmation; nothing was started or answered (rerun with `--yes` after you agree) |
+| 4 | The agent waits on a dialog: `dispatch` started it but didn't send the task, `send` didn't deliver, or `answer` found no option to pick; see [troubleshooting](troubleshooting.md#an-agent-waits-on-a-dialog) |
 
 ## Environment variables
 

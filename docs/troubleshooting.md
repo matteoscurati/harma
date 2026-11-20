@@ -8,11 +8,12 @@ Code 3 isn't an error: harma needs your confirmation before it starts or instruc
 
 ## An agent waits on a dialog
 
-`dispatch` exits with code 4 when the agent started but waits on a question, often "Do you trust this folder?" the first time a CLI opens a new directory. The task wasn't sent. To continue:
+`dispatch` and `send` exit with code 4 when the agent waits on a question; the task or message wasn't delivered. At startup it's often "Do you trust this folder?", the first time a CLI opens a new directory. To continue:
 
 1. Run `harma read agent_name` to see the question
-2. Answer it yourself in the agent's tab or terminal; the orchestrator must not answer approval dialogs for you. harma already answers the folder-trust dialog in the worktrees it creates; `harma trust on` extends that to the project folder, see [folder trust](agents-and-sessions.md#folder-trust)
-3. Send the task again with `harma send agent_name "task" --yes`
+2. The folder-trust dialog: answer it in the agent's tab or terminal. harma already answers it in the worktrees it creates; `harma trust on` extends that to the project folder, see [folder trust](agents-and-sessions.md#folder-trust)
+3. Any other question or permission: the orchestrator answers it with `harma answer`, as far as `harma answers` allows, or you answer it in the agent's terminal; see [questions and permissions](agents-and-sessions.md#questions-and-permissions)
+4. Send the task again with `harma send agent_name "task" --yes`
 
 ## The selection screen needs a terminal
 

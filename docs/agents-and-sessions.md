@@ -99,7 +99,43 @@ When an agent stops at startup and the policy covers its folder, harma reads its
 - the dialog names that folder
 - the selected option is the trust option; harma moves to it and checks again before pressing Enter
 
-Otherwise it leaves the agent waiting: `dispatch` exits with code 4 and the task isn't sent. Each answer is recorded in `.harma/agents.jsonl` as a `trusted` event, and each refusal as `trust_skipped`. harma never answers tool-permission dialogs, such as a request to run a command: those stay with you.
+Otherwise it leaves the agent waiting: `dispatch` exits with code 4 and the task isn't sent. Each answer is recorded in `.harma/agents.jsonl` as a `trusted` event, and each refusal as `trust_skipped`. harma never answers a tool-permission dialog by itself, such as a request to run a command; the orchestrator can, as the next section explains.
+
+## Questions and permissions
+
+An agent can stop in the middle of a task to ask something: a choice about the work, or permission to run a command, write a file or use the network. herdr shows it as `blocked`, and it waits. The orchestrator can answer it with `harma answer`, as far as the project's answer policy allows:
+
+| Policy | What the orchestrator may answer |
+|---|---|
+| `off` | Nothing: you answer in the agent's terminal |
+| `questions` | Questions about the work; permission requests stay with you |
+| `permissions` (default) | Questions, and a permission for the one request on screen |
+| `all` | Everything, including options that keep a permission, such as "don't ask again" |
+
+```sh
+harma answers               # shows the policy
+harma answers questions     # or: off, permissions, all
+```
+
+The orchestrator reads the screen, then names the option it chose:
+
+```sh
+harma read trend-server --lines 40
+harma answer trend-server --kind question --option "Omit and list the currency" --reason "the contract lists excluded currencies"
+harma answer builder --kind permission --option "Yes, proceed" --reason "runs the project's tests"
+```
+
+harma first checks that the agent is `blocked`. It then moves the selection through the list to read every option, picks the one named (by number when the options are numbered, otherwise by its text), moves to it, and reads the screen again before pressing Enter. Text that fits more than one option, or none, sends nothing, and the error lists the options on screen. `--text "…"` types a free answer, after the option that asks for one; `--keys "down,enter"` sends keys as given, with no check.
+
+Under the default policy, an option that keeps a permission ("Yes, and don't ask again", "allow all edits during this session", "allow always") needs your approval, whatever `--kind` says: harma exits with code 3 and the orchestrator asks you. So does a permission given with `--keys`, since harma can't read what it approves. The folder-trust dialog follows the [trust policy](#folder-trust), not this one.
+
+The skill tells the orchestrator how to judge:
+
+- it answers a question about the work from the brief and your decisions, and asks you when the choice changes the scope, the cost or something you decided
+- it approves a permission once only when the action belongs to the agent's task and stays in its folder or worktree; a push, a deploy, deleting outside that folder, payments, credentials and sending data out stay with you
+- it tells you what it answered and why
+
+After pressing Enter, harma waits until the agent leaves `blocked`. If another question appears instead, it prints its last lines, and the orchestrator answers that one the same way. Each answer is recorded in `.harma/agents.jsonl` as an `answered` event, with the option, the reason and what allowed it (`policy answers permissions`, or `utente (--yes)`). `harma send` can't reach a waiting agent: it exits with code 4 and says to answer first.
 
 ## Session IDs
 
@@ -141,7 +177,7 @@ harma keeps its state in `.harma/` at the project root:
 | Path | Contents |
 |---|---|
 | `.harma/config.json` | Orchestrator, backend, herdr layout and workspaces (also per machine), trust policy, dispatch policy, budgets, thresholds, routing overrides and your model choices (`roster`) |
-| `.harma/agents.jsonl` | Append-only events: `orchestrator`, `started`, `session`, `prompted`, `blocked`, `trusted`, `trust_skipped`, `trust_policy`, `closed`, `resumed`, `roster` |
+| `.harma/agents.jsonl` | Append-only events: `orchestrator`, `started`, `session`, `prompted`, `blocked`, `answered`, `answer_policy`, `trusted`, `trust_skipped`, `trust_policy`, `closed`, `resumed`, `roster` |
 | `.harma/runs/` | One folder per headless job: `prompt.md`, `job.json`, `output.md`, `stderr.log`, `result.json`; git ignores this folder |
 | `.harma/cache/` | Last inventory, credits, ranking and selection status, each with its fetch time; git ignores this folder |
 

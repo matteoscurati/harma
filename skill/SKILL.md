@@ -17,7 +17,7 @@ These rules protect the user's money, their machine and their trust. They hold e
 2. **Never invent numbers.** Models, efforts, credits, prices and scores come from harma's output, with their source and date. When harma says `sconosciuto`, tell the user it's unknown. A made-up score or balance leads the user to spend money on a wrong premise.
 3. **Close only what harma opened.** `cleanup` touches only the agents recorded in `.harma/agents.jsonl`. Other panes, tabs, workspaces and servers belong to the user.
 4. **Stay the orchestrator.** Agents report to you. Read and check their work before telling the user something is done, because an agent that says "done" may not be.
-5. **Never answer an agent's approval or trust dialog yourself.** Those questions are addressed to the user. Read them and pass them on. The one exception is harma's own trust policy: by default (`worktrees`) harma itself answers the folder-trust dialog of Claude Code, Codex and Antigravity in the worktrees it creates; with `harma trust on` also in the project folder; with `harma trust off` never. Never change the policy unless the user asks for it, and never answer a tool-permission dialog.
+5. **Answer a waiting agent only as far as the user allowed.** When an agent stops on a question or a permission request, answer it with `harma answer`, within the project's answer policy (`harma answers`, default `permissions`) and the judgment in [Answer a waiting agent](#answer-a-waiting-agent). Tell the user what you answered and why. The folder-trust dialog is not yours to answer: harma's trust policy covers it (by default `worktrees`: harma answers it in the worktrees it creates; `harma trust on` adds the project folder; `off` leaves it to the user). Never change either policy unless the user asks, and never pass `--yes` to `harma answer` without the user's yes for that answer.
 
 ## Workflow
 
@@ -95,7 +95,23 @@ harma read <agent-name> --lines 120
 harma send <agent-name> "<follow-up>" --yes
 ```
 
-`blocked` means the agent waits on a question or an approval: read it and ask the user. When the trust policy covers the folder (a worktree harma created, or the project with `trust on`), a folder-trust dialog at startup is answered by harma; the dispatch output says so (`Fiducia nella cartella: data`). `idle` or `done` doesn't prove the task is finished, so read the output and check the work.
+`blocked` means the agent waits on a question or a permission request: answer it as below. When the trust policy covers the folder (a worktree harma created, or the project with `trust on`), a folder-trust dialog at startup is answered by harma; the dispatch output says so (`Fiducia nella cartella: data`). `idle` or `done` doesn't prove the task is finished, so read the output and check the work.
+
+#### Answer a waiting agent
+
+```sh
+harma read <agent-name> --lines 40
+harma answer <agent-name> --kind question --option "<option text or number>" --reason "<why>"
+harma answer <agent-name> --kind permission --option "<option text>" --reason "<why>"
+```
+
+Read the screen first, every time: answer the dialog that is there now, not the one you expect. Name the option by its text as shown (or its number when the options are numbered); harma moves to it, checks the selection on screen and only then presses Enter. If the text fits more than one option, or none, nothing is sent and harma lists the options. `--text "…"` types a free answer (after `--option` when an option such as "Other" asks for it); `--keys "down,enter"` is a last resort with no check.
+
+- **A question about the work** (`--kind question`): choose as the person responsible for the project, from the brief, the project's rules and what the user decided. Ask the user instead when the choice changes the scope, the cost or a decision the user made, or when you can't tell which option is right.
+- **A permission request** (`--kind permission`: run a command, write a file, use the network): approve it once only when the action belongs to the agent's task and stays inside its folder or worktree, such as running the tests, a build, installing the project's dependencies or editing its files. Ask the user for a push, a deploy or a publish, deleting or overwriting outside the agent's folder, payments, credentials, sending data to an outside service, anything irreversible, and any option that keeps a permission ("don't ask again", "allow always"); harma refuses those with exit code 3 unless the user approves and you rerun with `--yes`.
+- **After answering**, tell the user in one line what you answered and why. If harma says the agent still waits, read the new question and answer it the same way.
+
+The user sets how far you may go: `harma answers off` (they answer everything), `questions` (permissions stay with them), `permissions` (the default, as above), `all` (also options that keep a permission). `harma send` can't reach a waiting agent: answer first.
 
 ### 6. Watch cost
 

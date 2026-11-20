@@ -145,6 +145,33 @@ const screenOf = (ag) => {
 if (g === 'agent' && c === 'read' && a.includes('visible') && h.agents.find((x) => x.name === a[2])?.dialog) {
   save(); console.log(screenOf(h.agents.find((x) => x.name === a[2]))); process.exit(0);
 }
+// A question or permission dialog set by a test: ag.ask = {q, mark, options, sel, wrap, next}.
+// Above it, an earlier user message marked like a selection, as Codex shows it.
+const askScreen = (ag) => ['› earlier message from the user', '• Ran npm test', '', ag.ask.q, ...ag.ask.options.map((o, i) => (i === ag.ask.sel ? ' ' + ag.ask.mark + ' ' : '   ') + o), '', 'enter to submit · esc to cancel'].join(String.fromCharCode(10));
+if (g === 'agent' && c === 'read' && a.includes('visible') && h.agents.find((x) => x.name === a[2])?.ask) {
+  save(); console.log(askScreen(h.agents.find((x) => x.name === a[2]))); process.exit(0);
+}
+if (g === 'agent' && c === 'send-keys' && h.agents.find((x) => x.name === a[2])?.ask) {
+  const ag = h.agents.find((x) => x.name === a[2]);
+  h.keys = [...(h.keys ?? []), ...a.slice(3)];
+  for (const k of a.slice(3)) {
+    const q = ag.ask; if (!q) break; const n = q.options.length;
+    if (k === 'down') q.sel = q.wrap ? (q.sel + 1) % n : Math.min(q.sel + 1, n - 1);
+    if (k === 'up') q.sel = q.wrap ? (q.sel + n - 1) % n : Math.max(q.sel - 1, 0);
+    if (k === 'enter') {
+      h.answers = [...(h.answers ?? []), { agent: ag.name, option: q.options[q.sel], text: q.typed ?? null }];
+      ag.ask = q.next ?? null;
+      if (!ag.ask) ag.agent_status = 'working';
+    }
+  }
+  return ok({ type: 'ok' });
+}
+if (g === 'pane' && c === 'send-text') {
+  const ag = h.agents.find((x) => x.pane_id === a[2]); if (!ag) return fail('pane_not_found', 'no pane ' + a[2]);
+  h.texts = [...(h.texts ?? []), a[3]];
+  if (ag.ask) ag.ask.typed = a[3];
+  return ok({ type: 'ok' });
+}
 if (g === 'agent' && c === 'send-keys') {
   const ag = h.agents.find((x) => x.name === a[2]); if (!ag) return fail('not_found', 'no agent');
   h.keys = [...(h.keys ?? []), ...a.slice(3)];
@@ -159,7 +186,7 @@ if (g === 'agent' && c === 'send-keys') {
   }
   return ok({ type: 'ok' });
 }
-if (g === 'agent' && c === 'get') { const ag = h.agents.find((x) => x.name === a[2] || x.pane_id === a[2]); if (!ag) return fail('agent_not_found', 'gone'); return ok({ agent: { name: ag.name, agent_status: ag.agent_status } }); }
+if (g === 'agent' && c === 'get') { const ag = h.agents.find((x) => x.name === a[2] || x.pane_id === a[2]); if (!ag) return fail('agent_not_found', 'gone'); return ok({ agent: { name: ag.name, agent_status: ag.agent_status, pane_id: ag.pane_id } }); }
 if (g === 'agent' && c === 'wait') { const ag = h.agents.find((x) => x.name === a[2]); if (!ag) return fail('agent_not_running', 'gone'); return ok({ agent: { name: ag.name, agent_status: ag.agent_status } }); }
 if (g === 'agent' && c === 'read' && process.env.FAKE_READ_NOT_IDLE && a.includes('recent-unwrapped')) return fail('agent_not_idle', 'agent ' + a[2] + ' is working');
 if (g === 'agent' && c === 'read') { save(); console.log('output of ' + a[2] + ' (' + a[a.indexOf('--source') + 1] + ')'); process.exit(0); }
